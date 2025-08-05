@@ -1,0 +1,6 @@
+{
+  // 告诉 VS Code 用 black 来格式化 Python
+  "python.formatting.provider": "black",
+  // 保存时自动格式化
+  "editor.formatOnSave": true,
+}

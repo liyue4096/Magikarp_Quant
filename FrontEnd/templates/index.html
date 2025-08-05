@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Polygon WebSocket Demo</title>
+</head>
+<body>
+  <button id="toggle">Start</button>
+
+  <script>
+    const btn = document.getElementById('toggle');
+    let ws;
+
+    btn.addEventListener('click', () => {
+      if (!ws || ws.readyState === WebSocket.CLOSED) {
+        // TODO: 替换成你的 API Gateway 或直接 Polygon.io WebSocket URL
+        ws = new WebSocket('wss://socket.polygon.io/stocks');
+
+        ws.onopen = () => {
+          btn.textContent = 'Stop';
+          ws.send(JSON.stringify({ action:'auth', params: 'YOUR_API_KEY' }));
+          ws.send(JSON.stringify({ action:'subscribe', params: 'T.AAPL' }));
+        };
+        ws.onmessage = e => {
+          console.log('Data:', JSON.parse(e.data));
+          // 在这里做清洗→推理→展示
+        };
+        ws.onclose = () => { btn.textContent = 'Start'; };
+        ws.onerror = err => console.error(err);
+
+      } else {
+        ws.close();
+      }
+    });
+  </script>
+</body>
+</html>
