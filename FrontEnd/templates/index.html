@@ -26,8 +26,15 @@
     </div>
 
     <!-- 用来显示收到的数据 -->
-    <pre id="output" style="height: 300px; overflow: auto; border: 1px solid #ccc"></pre>
-
+    <div
+      id="output"
+      style="
+        height: 300px;
+        overflow: auto;
+        border: 1px solid #ccc;
+        font-family: ui-monospace, monospace;
+      "
+    ></div>
     <!-- 引入 Socket.IO 客户端脚本 -->
     <script src="{{ url_for('static', filename='socket.io.min.js') }}"></script>
 
@@ -68,15 +75,51 @@
         out.scrollTop = out.scrollHeight;
       });
 
-      // 实时报价由后端用 socketio.emit('polygon_data', data) 广播
       socket.on('polygon_data', (data) => {
-        const time = new Date(data.t).toLocaleTimeString();
-        if (data.ev === 'AM') {
-          // 分钟聚合，用 c（本分钟收盘价）
-          line = `[${time}] ${data.sym}/AM 收盘价 → ${data.c}`;
+        // 可选：小数保留到 6 位
+        const replacer = (k, v) =>
+          typeof v === 'number' && !Number.isInteger(v) ? Number(v.toFixed(6)) : v;
+
+        const json = JSON.stringify(data, replacer, 2);
+
+        // === 核心改动：生成 <details><summary>preview</summary><pre>JSON</pre></details> ===
+        const details = document.createElement('details'); // 默认折叠
+        details.style.borderBottom = '1px solid #eee';
+
+        const summary = document.createElement('summary');
+        const previewTime =
+          data.t_et ||
+          (data.t
+            ? new Intl.DateTimeFormat('en-US', {
+                timeZone: 'America/New_York',
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+              }).format(new Date(data.t))
+            : '');
+        summary.textContent = `${data.ev ?? ''}  ${data.sym ?? ''}  ${previewTime}`;
+        summary.style.cursor = 'pointer';
+        summary.style.padding = '2px 4px';
+        details.appendChild(summary);
+
+        const pre = document.createElement('pre');
+        pre.textContent = json;
+        pre.style.margin = '4px 8px';
+        details.appendChild(pre);
+
+        out.appendChild(details);
+        // === 以上为折叠显示 ===
+
+        // 自动滚动（仅当接近底部）
+        const nearBottom = out.scrollTop + out.clientHeight >= out.scrollHeight - 10;
+        if (nearBottom) out.scrollTop = out.scrollHeight;
+
+        // 简单限流：最多保留最近 N 条
+        const MAX_ITEMS = 500;
+        while (out.childElementCount > MAX_ITEMS) {
+          out.removeChild(out.firstElementChild);
         }
-        out.textContent += line + '\n';
-        out.scrollTop = out.scrollHeight;
       });
     </script>
   </body>

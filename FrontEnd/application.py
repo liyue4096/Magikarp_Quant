@@ -2,6 +2,8 @@ from quart import Quart, render_template
 import socketio
 from polygon import WebSocketClient
 from polygon.websocket.models import WebSocketMessage
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import threading
 import uvicorn
 import os
@@ -23,8 +25,27 @@ current_subs: list[str] = []
 
 API_KEY = "123"
 
+
+ET_TZ = ZoneInfo("America/New_York")
+
+
+def _to_iso_utc(ts):
+    if ts is None:
+        return None
+    ts_s = ts / 1000 if ts > 1e12 else ts  # 粗略判断：秒还是毫秒
+    return datetime.fromtimestamp(ts_s, tz=timezone.utc).isoformat()
+
+
+def _to_iso_et(ts):
+    if ts is None:
+        return None
+    ts_s = ts / 1000 if ts > 1e12 else ts
+    return datetime.fromtimestamp(ts_s, tz=timezone.utc).astimezone(ET_TZ).isoformat()
+
+
 async def _emit_polygon_data(data):
     await sio.emit("polygon_data", data)
+
 
 def polygon_thread(subs: list[str]):
     print(f"polygon_thread running with subs={subs}")
@@ -36,32 +57,38 @@ def polygon_thread(subs: list[str]):
         # 取每条消息里关心的字段
         for m in msgs:
             # 通用字段
+            ev = getattr(m, "event_type", None)
+            sym = getattr(m, "symbol", getattr(m, "ticker", None))
+            # 统一事件时间：AM 用 bar 结束时间，其它类型用 timestamp
+            ts = getattr(m, "timestamp", getattr(m, "end_timestamp", None))
+
             data = {
-                "ev": m.ev,  # 事件类型，比如 "AM"
-                "sym": m.sym,  # 股票代码
-                "t": getattr(m, "t", None),  # Unix ms timestamp
+                "ev": ev,
+                "sym": sym,
+                "t": ts,  # 原始毫秒
+                "t_utc": _to_iso_utc(ts),
+                "t_et": _to_iso_et(ts),
             }
-            print("🔔 Received from Polygon:", data)
 
             # 如果是分钟级聚合（AM），注册所有相关属性
-            if m.ev == "AM":
+            if ev == "AM":  # 分钟聚合（EquityAgg）
+                s = getattr(m, "start_timestamp", None)
+                e = getattr(m, "end_timestamp", None)
                 data.update(
                     {
-                        "v": getattr(m, "v", None),  # tick volume
-                        "av": getattr(m, "av", None),  # 今日累计成交量
-                        "op": getattr(m, "op", None),  # 今日官方开盘价
-                        "vw": getattr(m, "vw", None),  # 本窗口 VWAP
-                        "o": getattr(m, "o", None),  # 本窗口开盘价
-                        "c": getattr(m, "c", None),  # 本窗口收盘价
-                        "h": getattr(m, "h", None),  # 本窗口最高价
-                        "l": getattr(m, "l", None),  # 本窗口最低价
-                        "a": getattr(m, "a", None),  # 当日 VWAP
-                        "z": getattr(m, "z", None),  # 本窗口平均成交量大小
-                        "s": getattr(m, "s", None),  # 窗口开始时间（Unix ms）
-                        "e": getattr(m, "e", None),  # 窗口结束时间（Unix ms）
-                        "otc": getattr(
-                            m, "otc", False
-                        ),  # 是否 OTC，False 时可能不存在此属性
+                        "v": getattr(m, "volume", None),
+                        "av": getattr(m, "accumulated_volume", None),
+                        "op": getattr(m, "official_open_price", None),
+                        "vw": getattr(m, "vwap", None),  # 窗口 VWAP
+                        "o": getattr(m, "open", None),
+                        "c": getattr(m, "close", None),
+                        "h": getattr(m, "high", None),
+                        "l": getattr(m, "low", None),
+                        "a": getattr(m, "aggregate_vwap", None),  # 当日 VWAP（聚合）
+                        "z": getattr(m, "average_size", None),
+                        "s": s,
+                        "e": e,
+                        "otc": getattr(m, "otc", False),
                     }
                 )
 
@@ -97,7 +124,7 @@ async def subscribe(sid, message):
     if ws_client:
         await ws_client.close()
         ws_client = None
-         # 通知前端，旧的订阅已取消，原因是开始了新的订阅
+        # 通知前端，旧的订阅已取消，原因是开始了新的订阅
         await sio.emit(
             "unsubscribed",
             {"subscriptions": prev_subs, "reason": "new subscription"},
@@ -119,7 +146,7 @@ async def subscribe(sid, message):
 @sio.on("unsubscribe")
 async def unsubscribe(sid):
     global ws_client, current_subs
-    
+
     # 如果当前有活跃的 Polygon.io WebSocket 客户端，就关闭连接
     if ws_client:
         await ws_client.close()
@@ -132,6 +159,7 @@ async def unsubscribe(sid):
 
     # 清空全局订阅列表，重置为无订阅状态
     current_subs = []
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
