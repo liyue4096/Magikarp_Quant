@@ -3,4 +3,21 @@
   "python.formatting.provider": "black",
   // 保存时自动格式化
   "editor.formatOnSave": true,
+
+  //针对这些语言用 Prettier
+  "[html]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[css]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+
+  // 排版时修剪多余空格、保留换行等
+  "prettier.requireConfig": true
 }
