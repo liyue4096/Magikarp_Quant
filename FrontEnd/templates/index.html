@@ -3,87 +3,119 @@
   <head>
     <meta charset="UTF-8" />
     <title>动态 Polygon.io 实时订阅</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
   </head>
   <body>
-    <h1>Polygon.io 实时数据</h1>
+    <div id="content">
+      <div id="subscription-area">
+        <h2>当前订阅</h2>
+        <form id="addForm" onsubmit="return false;">
+          <label>
+            事件类型：
+            <select id="eventType">
+              <option value="AM">Agg Minute（分钟聚合）</option>
+            </select>
+          </label>
+          <label>
+            股票代码：
+            <input id="symbol" placeholder="例如 AAPL" />
+          </label>
+          <button id="addBtn">添加订阅</button>
+        </form>
 
-    <!-- 用户输入区 -->
-    <div>
-      <label>
-        事件类型：
-        <select id="eventType">
-          <option value="AM">Agg Minute（分钟聚合）</option>
-        </select>
-      </label>
+        <h2>订阅列表</h2>
+        <ul id="subList"></ul>
+      </div>
 
-      <label>
-        股票代码：
-        <input id="symbol" placeholder="例如 AAPL" />
-      </label>
-
-      <button id="sub">Subscribe</button>
-      <button id="unsub">Unsubscribe</button>
+      <div id="data-area">
+        <h1>Polygon.io 实时数据</h1>
+        <div id="output"></div>
+      </div>
     </div>
-
-    <!-- 用来显示收到的数据 -->
-    <div
-      id="output"
-      style="
-        height: 300px;
-        overflow: auto;
-        border: 1px solid #ccc;
-        font-family: ui-monospace, monospace;
-      "
-    ></div>
-    <!-- 引入 Socket.IO 客户端脚本 -->
     <script src="{{ url_for('static', filename='socket.io.min.js') }}"></script>
-
     <script>
-      // 连接到后端 Flask-SocketIO
       const socket = io();
       socket.on('connect', () => {
-        // 上报客户端版本给服务端
         socket.emit('client_version', { version: io.version });
+        rehydrateFromServer();
       });
 
-      const out = document.getElementById('output');
+      const subs = new Set();
+      const subListEl = document.getElementById('subList');
+      const outputEl = document.getElementById('output');
 
-      // 点击 Subscribe 时，把用户选择的订阅列表发给后端
-      document.getElementById('sub').addEventListener('click', () => {
+      // 从后端 REST 接口取订阅快照并渲染
+      async function rehydrateFromServer() {
+        try {
+          const res = await fetch('/api/subs', { cache: 'no-store' });
+          const data = await res.json();
+          const serverSubs = Array.isArray(data.subs) ? data.subs : [];
+          subs.clear();
+          serverSubs.forEach((s) => subs.add(s));
+          renderSubs();
+        } catch (e) {
+          console.error('rehydrate failed:', e);
+        }
+      }
+
+      // 渲染订阅列表
+      function renderSubs() {
+        subListEl.innerHTML = '';
+        const ordered = [...subs].sort((a, b) => {
+          const [ta, sa] = a.split('.', 2);
+          const [tb, sb] = b.split('.', 2);
+          if (ta !== tb) return ta.localeCompare(tb, 'en', { sensitivity: 'base' });
+          return (sa || '').localeCompare(tb ? sb : '', 'en', { numeric: true, sensitivity: 'base' });
+        });
+        for (const s of ordered) {
+          const li = document.createElement('li');
+          li.textContent = s;
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = '✖';
+          btn.onclick = () => removeSub(s);
+          li.appendChild(btn);
+          subListEl.appendChild(li);
+        }
+      }
+      
+
+      // 添加订阅
+      document.getElementById('addBtn').addEventListener('click', () => {
         const type = document.getElementById('eventType').value;
         const sym = document.getElementById('symbol').value.trim().toUpperCase();
         if (!sym) return alert('请先输入股票代码');
-        // 构造订阅字符串，如 "T.AAPL"
-        const subs = [`${type}.${sym}`];
-        socket.emit('subscribe', { subscriptions: subs });
+        const sub = `${type}.${sym}`;
+        if (subs.has(sub)) return alert('已存在该订阅');
+        subs.add(sub);
+        renderSubs();
+        socket.emit('subscribe_one', { subscriptions: [sub] });
+        document.getElementById('symbol').value = '';
       });
 
-      // 点击 Unsubscribe 时，通知后端断开
-      document.getElementById('unsub').addEventListener('click', () => {
-        socket.emit('unsubscribe');
-      });
+      // 移除订阅
+      function removeSub(sub) {
+        subs.delete(sub);
+        renderSubs();
+        socket.emit('unsubscribe_one', { subscriptions: [sub] });
+      }
 
-      // 后端确认订阅成功后会发回 'subscribed' 事件
+      // 后端消息处理
       socket.on('subscribed', (msg) => {
-        out.textContent += `✔ 已订阅：${msg.subscriptions.join(', ')}\n`;
+        appendLine(`✔ 已订阅：${msg.subscriptions.join(', ')}`);
       });
-
-      // 后端确认取消订阅后会发回 'unsubscribed'
       socket.on('unsubscribed', (msg) => {
-        const list = msg.subscriptions.join(', ');
-        out.textContent += `✖ 已取消订阅：${list}\n`;
-        out.scrollTop = out.scrollHeight;
+        appendLine(`✖ 已取消：${msg.subscriptions.join(', ')}`);
       });
 
       socket.on('polygon_data', (data) => {
-        // 可选：小数保留到 6 位
+        // 格式化数字
         const replacer = (k, v) =>
           typeof v === 'number' && !Number.isInteger(v) ? Number(v.toFixed(6)) : v;
-
         const json = JSON.stringify(data, replacer, 2);
 
-        // === 核心改动：生成 <details><summary>preview</summary><pre>JSON</pre></details> ===
-        const details = document.createElement('details'); // 默认折叠
+        const details = document.createElement('details');
+        details.open = false;
         details.style.borderBottom = '1px solid #eee';
 
         const summary = document.createElement('summary');
@@ -108,19 +140,29 @@
         pre.style.margin = '4px 8px';
         details.appendChild(pre);
 
-        out.appendChild(details);
-        // === 以上为折叠显示 ===
-
-        // 自动滚动（仅当接近底部）
-        const nearBottom = out.scrollTop + out.clientHeight >= out.scrollHeight - 10;
-        if (nearBottom) out.scrollTop = out.scrollHeight;
-
-        // 简单限流：最多保留最近 N 条
-        const MAX_ITEMS = 500;
-        while (out.childElementCount > MAX_ITEMS) {
-          out.removeChild(out.firstElementChild);
-        }
+        outputEl.appendChild(details);
+        trimOutput(500);
+        scrollOutput();
       });
+
+      function appendLine(text) {
+        const div = document.createElement('div');
+        div.className = 'log';
+        div.textContent = text;
+        outputEl.appendChild(div);
+        scrollOutput();
+      }
+
+      function scrollOutput() {
+        const nearBottom = outputEl.scrollTop + outputEl.clientHeight >= outputEl.scrollHeight - 10;
+        if (nearBottom) outputEl.scrollTop = outputEl.scrollHeight;
+      }
+
+      function trimOutput(max) {
+        while (outputEl.childElementCount > max) {
+          outputEl.removeChild(outputEl.firstElementChild);
+        }
+      }
     </script>
   </body>
 </html>
