@@ -2,7 +2,7 @@
 
 ## Overview
 
-A serverless AWS-based trading system that fetches daily stock market data for Russell 3000 stocks (~3,000 stocks representing 98% of US market capitalization), uses FinRL reinforcement learning to generate monthly trading signals, and provides real-time monitoring through a web dashboard. The system operates on daily data collection with monthly signal generation for reduced noise and better risk-adjusted returns.
+A serverless AWS-based trading recommendation system that fetches daily stock market data for Russell 3000 stocks (~3,000 stocks representing 98% of US market capitalization), uses FinRL reinforcement learning to generate daily trading recommendations, and provides real-time monitoring through a web dashboard. The system operates with daily data collection, daily recommendation generation, and monthly model retraining. Portfolio state is maintained across days within each month, then reset when the model is retrained.
 
 ## System Architecture
 
@@ -80,7 +80,7 @@ A serverless AWS-based trading system that fetches daily stock market data for R
   - Rationale: Handles annual rebalancing (~200-250 stock changes) without model retraining
 - **Scale**:
   - Observation space: 61,200 dimensions (3,600 stocks × 17 features)
-  - Action space: 3,600 dimensions (portfolio weights)
+  - Action space: 3,600 dimensions (portfolio weights, continuous 0-1)
   - Model size: ~450 MB (compressed)
 - **Features**: 17 per stock
   - Base: OHLCV, technical indicators (RSI, MACD, Bollinger Bands), volume, volatility
@@ -90,21 +90,37 @@ A serverless AWS-based trading system that fetches daily stock market data for R
 - **Training**: Monthly automated retraining on SageMaker
   - Instance: ml.m5.2xlarge (8 vCPU, 32GB RAM) @ $0.538/hour
   - Duration: ~5-6 hours per training session
-  - Frequency: First day of each month, before signal generation
-  - Rationale: Monthly retraining aligns with trading frequency, provides 20-30 days of new data
-- **Reward Function**: Hybrid approach (0.6 _ monthly_return + 0.3 _ sharpe_ratio - 0.1 \* drawdown_penalty)
-- **Output**: Monthly trading signals for top 50-100 stocks (BUY/SELL/HOLD) with confidence scores
+  - Frequency: First day of each month, before daily recommendations begin
+  - Rationale: Monthly retraining provides 20-30 days of new data, balances freshness with stability
+- **Reward Function**: Hybrid approach (0.6 * daily_return + 0.3 * sharpe_ratio - 0.1 * drawdown_penalty)
+- **Portfolio State**: Maintained across days within each month, reset at monthly retraining
+- **Output**: Daily portfolio target weights (0-1 for each stock) converted to actionable recommendations
 
-### 4. Signal Generation Layer
+### 4. Recommendation Generation Layer
 
 - **Technology**: Lambda Container Image (recommended) or SageMaker Serverless Inference
 - **Container**: ~950 MB (FinRL + model + dependencies)
 - **Configuration**: 6 GB memory, 10-minute timeout
-- **Frequency**: Monthly (first trading day of each month)
-- **Trigger**: Scheduled CloudWatch Events
-- **Process**: Load model → Process 3,600-slot universe → Generate top signals → Store results → Send email
+- **Frequency**: Daily (every trading day at market close)
+- **Trigger**: Scheduled CloudWatch Events (6 PM UTC after market close)
+- **Process**: 
+  1. Load trained model and current portfolio state from DynamoDB
+  2. Fetch today's market data (3,600 stocks × 17 features)
+  3. Model predicts target portfolio weights (action space: 3,600 dimensions)
+  4. Compare target weights vs current holdings
+  5. Generate recommendations: BUY (increase weight), SELL (decrease weight), HOLD (maintain)
+  6. Update portfolio state in DynamoDB
+  7. Send daily email with top recommendations
 - **Batch Processing**: 400 stocks per batch (9 batches total) for efficiency
-- **Performance Tracking**: 12-month success rate calculation
+- **Portfolio State Management**:
+  - Tracked in DynamoDB: current holdings, cash balance, portfolio value
+  - Updated daily based on model's target weights
+  - Reset monthly when model is retrained
+- **Recommendation Logic**:
+  - BUY: Target weight > Current weight + threshold (e.g., +2%)
+  - SELL: Target weight < Current weight - threshold (e.g., -2%)
+  - HOLD: Within threshold range
+- **Performance Tracking**: Daily portfolio value, monthly success rate calculation
 
 ### 5. Notification Layer
 
@@ -112,8 +128,16 @@ A serverless AWS-based trading system that fetches daily stock market data for R
 - **Types**:
   - **Critical**: Model failures, system down
   - **Warning**: Data quality issues, API rate limits
-  - **Info**: Monthly signals, performance updates
-- **Content**: Monthly trading recommendations, portfolio performance, risk metrics
+  - **Info**: Daily recommendations, monthly performance updates
+- **Daily Email Content**: 
+  - Top 20-30 BUY recommendations with target weights and confidence scores
+  - Top 10-15 SELL recommendations
+  - Current portfolio summary (holdings, cash, total value)
+  - Daily P&L and performance metrics
+- **Monthly Email Content**:
+  - Model retraining summary
+  - Monthly performance review
+  - Risk metrics and portfolio analytics
 - **Format**: HTML email with charts and signal summaries
 
 ### 6. Frontend Dashboard
@@ -121,11 +145,13 @@ A serverless AWS-based trading system that fetches daily stock market data for R
 - **Technology**: React + TypeScript hosted on AWS Amplify
 - **Features**:
   - Real-time system health monitoring
-  - 12-month trading signal success rate
-  - FinRL portfolio performance metrics
-  - Interactive charts and visualizations
+  - Daily recommendation history (last 30 days)
+  - Current portfolio state (holdings, cash, value)
+  - Daily and monthly performance metrics
+  - Interactive charts: portfolio value over time, daily P&L
   - System logs and error tracking
   - Russell 3000 coverage heatmap
+  - Model performance: success rate of BUY/SELL recommendations
 
 ## Universe Architecture & Rebalancing Strategy
 
@@ -183,23 +209,32 @@ s3://trading-system-ml-models/
 
 ## Data Flow
 
-### Daily Workflow
+### Daily Workflow (Every Trading Day)
 
-1. **06:00 UTC**: Lambda fetches market data from APIs
+1. **06:00 UTC**: Lambda fetches market data from APIs (3,000 Russell 3000 stocks)
 2. **06:15 UTC**: Data stored in S3 with validation checks
 3. **06:20 UTC**: Data quality validation and email alerts if issues found
-4. **Real-time**: Dashboard updates with latest data status
+4. **18:00 UTC** (After Market Close): Recommendation generation begins
+   - Load trained model and current portfolio state
+   - Process 3,600 stocks in 9 batches (400 stocks each)
+   - Model outputs target portfolio weights
+   - Compare with current holdings to generate BUY/SELL/HOLD signals
+   - Update portfolio state in DynamoDB
+5. **18:15 UTC**: Daily recommendations email sent (top 20-30 BUY, 10-15 SELL)
+6. **Real-time**: Dashboard updates with latest recommendations and portfolio status
 
-### Monthly Workflow (First Trading Day)
+### Monthly Workflow (First Trading Day of Month)
 
-1. **02:00 UTC**: SageMaker retrains FinRL model with last 30 days of data (3,600-slot universe)
-2. **06:00 UTC**: Model training complete (5-6 hours)
+1. **00:00 UTC**: Monthly retraining begins
+   - SageMaker retrains FinRL model with last 30 days of data (3,600-slot universe)
+   - Training duration: ~5-6 hours
+2. **06:00 UTC**: Model training complete
 3. **06:15 UTC**: Model validation and backtesting complete
 4. **06:30 UTC**: New model (~450 MB) deployed to S3 and ECR for inference
-5. **07:00 UTC**: Lambda generates monthly trading signals (processes 3,600 slots in 9 batches)
-6. **07:15 UTC**: Top 50-100 signals validated and stored in DynamoDB
-7. **07:30 UTC**: Email sent with monthly recommendations
-8. **Real-time**: Dashboard updates with new signals and model performance
+5. **06:45 UTC**: Portfolio state reset in DynamoDB (fresh start for new month)
+6. **18:00 UTC**: First daily recommendations with new model
+7. **18:30 UTC**: Monthly summary email sent (previous month performance + new model info)
+8. **Real-time**: Dashboard updates with new model performance metrics
 
 ## Technology Stack
 
@@ -253,22 +288,23 @@ s3://trading-system-ml-models/
 | Service     | Usage                                  | Estimated Cost |
 | ----------- | -------------------------------------- | -------------- |
 | Market Data | Russell 3000 stocks (Polygon.io)       | $50            |
-| Lambda/ECR  | 35 executions + container storage      | $5             |
+| Lambda/ECR  | ~22 daily + 1 monthly + container storage | $15         |
 | S3          | 50GB storage + API calls               | $6             |
 | SageMaker   | 6hrs/month (ml.m5.2xlarge @ $0.538/hr) | $3.23/month    |
-| DynamoDB    | 5GB storage, moderate R/W              | $5             |
-| SES         | 35 emails/month                        | $1             |
+| DynamoDB    | 10GB storage, high R/W (daily updates) | $10            |
+| SES         | ~22 daily + 1 monthly emails           | $1             |
 | Amplify     | Hosting + builds                       | $5             |
-| API Gateway | 5K requests/month                      | $1             |
-| CloudWatch  | Logs and metrics                       | $5             |
-| **Total**   |                                        | **~$81/month** |
+| API Gateway | 10K requests/month                     | $1             |
+| CloudWatch  | Logs and metrics                       | $8             |
+| **Total**   |                                        | **~$99/month** |
 
 **Cost Notes:**
 
 - **Market Data**: Polygon.io Starter ($50/month) for Russell 3000 bulk data, or free Yahoo Finance for development
 - **Training**: 6 hours × $0.538/hour = $3.23/month (3,600-slot universe with monthly retraining)
-- **Inference**: Lambda Container (6GB, 5min) = ~$0.20 per monthly inference
+- **Inference**: Lambda Container (6GB, 5min) × 22 trading days = ~$4.40/month for daily recommendations
 - **Storage**: ~50GB for 3,000 stocks × 365 days × 3 years of historical data
+- **DynamoDB**: Increased for daily portfolio state updates and recommendation storage
 
 ## Risk Management
 
@@ -290,24 +326,27 @@ s3://trading-system-ml-models/
 ### Phase 1 (MVP - 4 weeks)
 
 - [ ] Automated daily data ingestion with error handling
-- [ ] Basic FinRL StockTradingEnv setup
-- [ ] Monthly signal generation
-- [ ] Email notifications with error alerts
-- [ ] Simple dashboard with system status
+- [ ] Basic FinRL StockTradingEnv setup with portfolio state management
+- [ ] Daily recommendation generation (BUY/SELL/HOLD logic)
+- [ ] Portfolio state tracking in DynamoDB
+- [ ] Email notifications with daily recommendations
+- [ ] Simple dashboard with system status and current portfolio
 
 ### Phase 2 (Enhanced - 6 weeks)
 
 - [ ] Advanced FinRL algorithms (PPO, A2C, SAC)
-- [ ] Comprehensive dashboard with performance metrics
-- [ ] 12-month success rate tracking
-- [ ] Automated monthly model retraining
+- [ ] Comprehensive dashboard with daily performance metrics
+- [ ] Recommendation success rate tracking (30-day, 90-day)
+- [ ] Automated monthly model retraining with portfolio reset
+- [ ] Historical recommendation analysis
 
 ### Phase 3 (Production - 8 weeks)
 
-- [ ] Multi-environment deployment
-- [ ] Advanced risk management
-- [ ] Performance optimization
+- [ ] Multi-environment deployment (dev/staging/prod)
+- [ ] Advanced risk management and position sizing
+- [ ] Performance optimization for daily inference
 - [ ] Comprehensive monitoring and alerting
+- [ ] Backtesting framework for model validation
 
 ## Next Steps
 
@@ -327,5 +366,6 @@ s3://trading-system-ml-models/
 - v1.0: Initial design with daily trading signals, weekly retraining
 - v2.0: Monthly trading frequency, monthly retraining, Russell 3000 scale
 - v2.1: Fixed 3,600-slot universe architecture with archive strategy, temporal features for handling turnover, batch processing optimization
+- v2.2: Corrected to daily recommendation generation with monthly retraining, portfolio state management, continuous portfolio approach aligned with FinRL design
 
 **Disclaimer**: This system is for educational and research purposes. Always consult with financial advisors before making investment decisions based on algorithmic signals.
