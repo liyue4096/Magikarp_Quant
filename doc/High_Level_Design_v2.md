@@ -2,22 +2,24 @@
 
 ## Overview
 
-A serverless AWS-based trading recommendation system that fetches daily stock market data for Russell 3000 stocks (~3,000 stocks representing 98% of US market capitalization), uses FinRL reinforcement learning to generate daily trading recommendations, and provides real-time monitoring through a web dashboard. The system operates with daily data collection, daily recommendation generation, and monthly model retraining.
+A serverless AWS-based trading recommendation system that fetches daily stock market data for Russell 1000 stocks (~1,000 large-cap stocks representing 92% of US market capitalization), uses FinRL reinforcement learning to generate daily trading recommendations, and provides real-time monitoring through a web dashboard. The system operates with daily data collection, daily recommendation generation, and monthly model retraining. The architecture is designed to scale to Russell 3000 in future phases.
 
 ## Goals
 
 ### Primary Goals
 
-1. **Automated Daily Recommendations**: Generate BUY/SELL/HOLD signals for Russell 3000 stocks every trading day using reinforcement learning
-2. **Cost-Effective Operation**: Maintain monthly operational costs under $100 using serverless architecture and free data sources
-3. **Scalable ML Pipeline**: Support 3,000+ stocks with 32 features per stock, processing within 30 minutes daily
-4. **Model Safety**: Implement multi-gate validation (backtesting + shadow mode) to prevent bad model deployments
+1. **Automated Daily Recommendations**: Generate BUY/SELL/HOLD signals for Russell 1000 stocks every trading day using reinforcement learning
+2. **Cost-Effective Operation**: Maintain monthly operational costs under $50 using serverless architecture and free data sources
+3. **Scalable ML Pipeline**: Support 1,000+ stocks with 32 features per stock, processing within 15 minutes daily
+4. **Model Safety**: Implement multi-gate validation (6-month backtesting + 7-day shadow mode) to prevent bad model deployments
+5. **Educational Platform**: Provide transparent, reproducible system for learning algorithmic trading and RL applications
 
 ### Secondary Goals
 
 1. **Performance Tracking**: Monitor and report trading performance metrics (Sharpe ratio, drawdown, win rate) against QQQ baseline
 2. **System Reliability**: Achieve 99.9% uptime with automated error handling and fallback mechanisms
 3. **Real-Time Monitoring**: Provide web dashboard for system health, recommendations, and portfolio state
+4. **Flexible Universe**: Support Russell 1000 annual rebalancing without model retraining using fixed-slot architecture, with clear path to expand to Russell 3000
 4. **Flexible Universe**: Support Russell 3000 annual rebalancing without model retraining using fixed-slot architecture
 
 ## Non-Goals
@@ -29,7 +31,7 @@ A serverless AWS-based trading recommendation system that fetches daily stock ma
 3. **Options/Derivatives**: Limited to equity stocks; no options, futures, forex, or crypto trading
 4. **Portfolio Construction Constraints**: No sector limits, concentration limits, turnover constraints, or tax-loss harvesting
 5. **Alternative Data**: No sentiment analysis, news feeds, social media, or satellite imagery (padding features reserved for future)
-6. **Multi-Asset Classes**: Russell 3000 US equities only; no international stocks, bonds, or commodities
+6. **Multi-Asset Classes**: Russell 1000 US large-cap equities only; no mid/small-caps, international stocks, bonds, or commodities (initially)
 7. **Backtesting Framework**: No comprehensive historical simulation tool (only validation backtesting for new models)
 8. **User Management**: Single-user system; no multi-tenant support, authentication, or user accounts
 9. **Mobile App**: Web dashboard only; no native iOS/Android applications
@@ -37,6 +39,7 @@ A serverless AWS-based trading recommendation system that fetches daily stock ma
 
 ### Future Considerations (Not in Initial Scope)
 
+- **Expansion to Russell 3000**: Add mid-cap and small-cap stocks (Russell 2000/3000)
 - Integration with brokerage APIs for automated execution
 - Advanced position sizing techniques (Kelly Criterion, volatility-based sizing, risk-adjusted sizing)
 - Risk parity and equal risk contribution strategies
@@ -88,33 +91,35 @@ A serverless AWS-based trading recommendation system that fetches daily stock ma
 
 ### 1. Data Ingestion Layer
 
-- **Purpose**: Fetch daily market data and quarterly fundamentals for Russell 3000 stocks
+- **Purpose**: Fetch daily market data and quarterly fundamentals for Russell 1000 stocks
 - **Technology**: AWS Lambda (TypeScript) with parallel processing
 - **Trigger**: CloudWatch Events (daily at 22:00 UTC, ~1 hour after market close)
 - **Data Sources**: Yahoo Finance (primary), with backup sources (Polygon.io, Alpha Vantage)
 - **Output**: Raw OHLCV data and quarterly fundamentals stored in S3
+- **Volume**: ~1,000 stocks × 365 days × ~2KB = ~730 MB/year
 
 ### 2. Data Storage Layer
 
-- **S3**: Raw market data, quarterly fundamentals, trained models (~850-950 MB), processed features
+- **S3**: Raw market data, quarterly fundamentals, trained models (~300-400 MB), processed features
 - **DynamoDB**: System metrics, daily trading signals, portfolio state, stock universe metadata
 
 ### 3. ML Processing Layer (FinRL)
 
 - **Framework**: FinRL reinforcement learning with StockTradingEnv
-- **Universe**: Fixed 3,600-slot architecture (3,000 active + 300 archive + 300 padding) handles Russell 3000 rebalancing without retraining
+- **Universe**: Fixed 1,200-slot architecture (1,000 active + 100 archive + 100 padding) handles Russell 1000 rebalancing without retraining
 - **Features**: 32 per stock (15 technical + 10 fundamental + 2 temporal + 5 padding)
-- **Model Scale**: 115,200-dim observation space, 3,600-dim action space, ~850-950 MB model size
+- **Model Scale**: 38,400-dim observation space (1,200 × 32), 1,200-dim action space, ~300-400 MB model size
 - **Algorithms**: PPO, A2C, SAC
-- **Training**: Monthly on SageMaker (ml.m5.2xlarge, ~5-6 hours)
-- **Validation**: 2-month backtesting + 7-day shadow mode before production deployment
+- **Training**: Monthly on SageMaker (ml.m5.xlarge, ~2-3 hours) using last 6 months of data
+- **Validation**: 6-month backtesting (out-of-sample) + 7-day shadow mode before production deployment
 - **Output**: Daily portfolio target weights converted to BUY/SELL/HOLD recommendations
 
 ### 4. Recommendation Generation Layer
 
-- **Technology**: Lambda Container Image (~1.3 GB, 8 GB memory, 10-min timeout)
+- **Technology**: Lambda Container Image (~800 MB, 4 GB memory, 5-min timeout)
 - **Trigger**: Daily at 22:30 UTC (30 minutes after data ingestion)
 - **Process**: Load model → fetch features → predict weights → generate BUY/SELL/HOLD signals → update portfolio state → send email
+- **Processing Time**: ~1-2 minutes for 1,200 stocks
 - **Output**: Daily recommendations with target weights and confidence scores
 
 ### 5. Notification Layer
@@ -190,25 +195,25 @@ See Low-Level Design document for detailed workflows and timing.
 
 | Service     | Usage                                  | Estimated Cost |
 | ----------- | -------------------------------------- | -------------- |
-| Market Data | Russell 3000 daily + fundamentals (Yahoo Finance) | $0 |
-| Lambda/ECR  | ~22 daily + 1 monthly + container storage | $18         |
-| S3          | 60GB storage + API calls               | $7             |
-| SageMaker   | 7hrs/month (ml.m5.2xlarge @ $0.538/hr) | $3.77/month    |
-| DynamoDB    | 10GB storage, high R/W (daily updates) | $10            |
+| Market Data | Russell 1000 daily + fundamentals (Yahoo Finance) | $0 |
+| Lambda/ECR  | ~22 daily + 1 monthly + container storage | $10         |
+| S3          | 20GB storage + API calls               | $3             |
+| SageMaker   | 3hrs/month (ml.m5.xlarge @ $0.269/hr) | $0.81/month    |
+| DynamoDB    | 5GB storage, moderate R/W (daily updates) | $5            |
 | SES         | ~22 daily + 1 monthly emails           | $1             |
 | Amplify     | Hosting + builds                       | $5             |
 | API Gateway | 10K requests/month                     | $1             |
-| CloudWatch  | Logs and metrics                       | $8             |
-| **Total**   |                                        | **~$54/month** |
+| CloudWatch  | Logs and metrics                       | $5             |
+| **Total**   |                                        | **~$31/month** |
 
 **Cost Notes:**
 
 - **Market Data**: Free with Yahoo Finance (yfinance library) for daily OHLCV + quarterly fundamentals
-- **Training**: 7 hours × $0.538/hour = $3.77/month (3,600-slot universe, 27 features, monthly retraining)
-- **Inference**: Lambda Container (8GB, 5min) × 22 trading days = ~$5.50/month for daily recommendations
-- **Storage**: ~60GB for 3,000 stocks × 365 days × 3 years (price + fundamentals)
-- **DynamoDB**: Increased for daily portfolio state updates and recommendation storage
-- **Total savings**: $45/month vs paid data sources by using free Yahoo Finance
+- **Training**: 3 hours × $0.269/hour = $0.81/month (1,200-slot universe, 32 features, monthly retraining)
+- **Inference**: Lambda Container (4GB, 2min) × 22 trading days = ~$2.50/month for daily recommendations
+- **Storage**: ~20GB for 1,000 stocks × 365 days × 3 years (price + fundamentals)
+- **DynamoDB**: Moderate usage for daily portfolio state updates and recommendation storage
+- **Scalability**: Costs will increase to ~$54/month when expanding to Russell 3000
 
 ## Risk Management
 
@@ -232,34 +237,37 @@ See Low-Level Design document for detailed workflows and timing.
 
 ## Success Criteria
 
-### Milestone 1 (MVP - 4 weeks)
+### Milestone 1 (MVP - 4 weeks) - Russell 1000
 
-- [ ] Automated daily data ingestion (price + fundamentals) with error handling
+- [ ] Automated daily data ingestion for Russell 1000 (price + fundamentals) with error handling
 - [ ] Quarterly fundamentals fetching and caching from Yahoo Finance
 - [ ] Feature engineering pipeline (15 technical + 10 fundamental + 2 temporal + 5 padding features)
-- [ ] Basic FinRL StockTradingEnv setup with 32-feature observation space
+- [ ] FinRL StockTradingEnv setup with 1,200-slot universe (1,000 active + 100 archive + 100 padding)
 - [ ] Portfolio state tracking in DynamoDB
 - [ ] Daily recommendation generation (BUY/SELL/HOLD logic)
 - [ ] Email notifications with daily recommendations
 - [ ] Simple dashboard with system status and current portfolio
 
-### Milestone 2 (Enhanced - 6 weeks)
+### Milestone 2 (Enhanced - 6 weeks) - Production Ready
 
 - [ ] Advanced FinRL algorithms (PPO, A2C, SAC)
-- [ ] Model validation pipeline (backtesting + shadow mode)
+- [ ] Enhanced model validation pipeline (6-month backtesting + 7-day shadow mode)
 - [ ] Comprehensive dashboard with daily performance metrics
 - [ ] Recommendation success rate tracking (30-day, 90-day)
 - [ ] Automated monthly model retraining with validation gates
-- [ ] Model versioning and rollback capability
+- [ ] Model versioning and rollback capability (last 20 versions)
 - [ ] Historical recommendation analysis
+- [ ] Russell 1000 annual rebalancing handling
 
-### Milestone 3 (Production - 8 weeks)
+### Milestone 3 (Scale to Russell 3000 - 10 weeks)
 
+- [ ] Expand universe to Russell 3000 (add mid-cap and small-cap stocks)
+- [ ] Upgrade to 3,600-slot architecture (3,000 active + 300 archive + 300 padding)
+- [ ] Enhanced survivorship bias handling for small-cap delistings
 - [ ] Multi-environment deployment (dev/staging/prod)
 - [ ] Advanced risk management and position sizing
-- [ ] Performance optimization for daily inference
+- [ ] Performance optimization for larger universe
 - [ ] Comprehensive monitoring and alerting
-- [ ] Backtesting framework for model validation
 
 ## Next Steps
 
@@ -284,5 +292,6 @@ See Low-Level Design document for detailed workflows and timing.
 - v2.4: Updated to TypeScript for AWS infrastructure and APIs, 20-version model rollback, post-market data fetch (18:00 UTC), free Yahoo Finance option, QQQ baseline performance metrics, changed phases to milestones
 - v2.5: Integrated fundamental analysis from day 1 - added 10 fundamental features (P/E, P/B, EPS, etc.) from Yahoo Finance, expanded to 32 features per stock (27 active + 5 padding), updated model size to 850-950 MB, adjusted costs to $54/month with free data sources, padded to power-of-2 for GPU optimization
 - v2.6: Refactored to focus on high-level architecture, moved detailed workflows and implementation details to Low-Level Design document, corrected data fetch time to 22:00 UTC (~1 hour after market close)
+- v2.7: Changed initial scope to Russell 1000 (from Russell 3000) for simpler MVP, updated model size to 300-400 MB, reduced costs to ~$31/month, improved validation to 6-month backtesting, added clear expansion path to Russell 3000 in Milestone 3
 
 **Disclaimer**: This system is for educational and research purposes. Always consult with financial advisors before making investment decisions based on algorithmic signals.
