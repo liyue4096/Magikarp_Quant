@@ -28,7 +28,7 @@ A serverless AWS-based trading recommendation system that fetches daily stock ma
 1. **Real Trading Execution**: System generates recommendations only; does not execute actual trades or integrate with brokerages
 2. **Intraday Trading**: Focus on end-of-day signals only; no real-time tick data or high-frequency trading
 3. **Options/Derivatives**: Limited to equity stocks; no options, futures, forex, or crypto trading
-4. **Portfolio Construction Constraints**: No sector limits, concentration limits, turnover constraints, or tax-loss harvesting
+4. **Advanced Portfolio Optimization**: No tax-loss harvesting, risk parity, or dynamic position sizing (basic constraints like turnover limits and concentration limits ARE included for practical recommendations)
 5. **Alternative Data**: No sentiment analysis, news feeds, social media, or satellite imagery (padding features reserved for future)
 6. **Multi-Asset Classes**: Russell 1000 US large-cap equities only; no mid/small-caps, international stocks, bonds, or commodities (initially)
 7. **Backtesting Framework**: No comprehensive historical simulation tool (only validation backtesting for new models)
@@ -39,12 +39,13 @@ A serverless AWS-based trading recommendation system that fetches daily stock ma
 ### Future Considerations (Not in Initial Scope)
 
 - **Expansion to Russell 3000**: Add mid-cap and small-cap stocks (Russell 2000/3000)
-- Advanced position sizing techniques (Kelly Criterion, volatility-based sizing, risk-adjusted sizing)
-- Risk parity and equal risk contribution strategies
-- Sentiment analysis from news and social media (using padding features)
-- International stock markets (FTSE, DAX, Nikkei)
-- Multi-model ensemble approaches
-- Real-time streaming data processing
+- **Advanced Position Sizing**: Kelly Criterion, volatility-based sizing, risk-adjusted sizing
+- **Risk Parity**: Equal risk contribution strategies
+- **Alternative Data**: Sentiment analysis from news and social media (using padding features)
+- **International Markets**: FTSE, DAX, Nikkei
+- **Multi-Model Ensemble**: Combine multiple RL algorithms
+- **Real-Time Processing**: Intraday signals and streaming data
+- **Transaction Cost Modeling**: Explicit bid-ask spread and slippage modeling in reward function
 
 ## System Architecture
 
@@ -136,17 +137,20 @@ A serverless AWS-based trading recommendation system that fetches daily stock ma
   - **Alternative Configurations**: [256, 256] for faster MVP training, [1024, 512, 256] for maximum capacity (to be determined through experimentation)
 - **Permutation Invariance**: Stocks can be shuffled during training; model learns from features, not slot positions
 - **Algorithms**: PPO (primary), A2C, SAC (alternatives for comparison)
+- **Reward Function**: Portfolio returns with penalties for turnover and concentration (encourages practical strategies)
 - **Training Strategy**: Multi-phase validation (forward + reverse testing on 15 years of data) before production deployment; monthly retraining with rolling 5-year window (see Model Validation Strategy section)
 - **Training Infrastructure**: Monthly on SageMaker (ml.m5.xlarge, ~4-5 hours)
-- **Output**: Daily portfolio target weights converted to BUY/SELL/HOLD recommendations
+- **Output**: Daily portfolio target weights (post-processed with constraints) converted to BUY/SELL/HOLD recommendations
 
 ### 4. Recommendation Generation Layer
 
-- **Technology**: Lambda Container Image (~800 MB, 4 GB memory, 5-min timeout)
-- **Trigger**: Daily at 22:30 UTC (30 minutes after data ingestion)
-- **Process**: Load model → fetch features → predict weights → generate BUY/SELL/HOLD signals → update portfolio state → send email
-- **Processing Time**: ~1-2 minutes for 1,200 stocks
-- **Output**: Daily recommendations with target weights and confidence scores
+- **Technology**: SageMaker Serverless Inference (4 GB memory, auto-scaling)
+- **Trigger**: Daily at 22:30 UTC (30 minutes after data ingestion), invoked by Lambda orchestrator
+- **Process**: Load model → fetch features → predict weights → apply portfolio constraints → generate BUY/SELL/HOLD signals → update portfolio state → send email
+- **Portfolio Constraints**: Max 25% daily turnover, max 20% per stock, min 10 stocks, max 60% per sector (ensures practical, tradable recommendations)
+- **Processing Time**: ~30-60 seconds for inference (1,200 stocks), minimal cold start overhead
+- **Output**: Constrained daily recommendations with target weights and confidence scores
+- **Rationale**: SageMaker Serverless avoids Lambda cold start issues with large models; portfolio constraints prevent impractical recommendations that ignore transaction costs
 
 ### 5. Notification Layer
 
@@ -291,7 +295,8 @@ The system uses multi-phase validation combining forward testing (predictive) an
 | Service     | Usage                                  | Estimated Cost |
 | ----------- | -------------------------------------- | -------------- |
 | Market Data | Russell 1000 daily + fundamentals + macro (Yahoo Finance + FRED) | $0 |
-| Lambda/ECR  | ~22 daily + 1 monthly + container storage | $10         |
+| Lambda/ECR  | ~22 daily data fetch + orchestration | $5         |
+| SageMaker Serverless | Daily inference (4GB, ~1 min × 22 days) | $1         |
 | S3          | 30GB storage + API calls               | $4             |
 | SageMaker   | 5hrs/month (ml.m5.xlarge @ $0.269/hr) | $1.35/month    |
 | DynamoDB    | 5GB storage, moderate R/W (daily updates) | $5            |
@@ -299,13 +304,13 @@ The system uses multi-phase validation combining forward testing (predictive) an
 | Amplify     | Hosting + builds                       | $5             |
 | API Gateway | 10K requests/month                     | $1             |
 | CloudWatch  | Logs and metrics                       | $5             |
-| **Total**   |                                        | **~$32/month** |
+| **Total**   |                                        | **~$28/month** |
 
 **Cost Notes:**
 
 - **Market Data**: Free with Yahoo Finance (yfinance library) for daily OHLCV + quarterly fundamentals + dividends + VIX; FRED API (free) for macro indicators
 - **Training**: 5 hours × $0.269/hour = $1.35/month (1,200-slot universe, 64 features, monthly retraining)
-- **Inference**: Lambda Container (4GB, 2min) × 22 trading days = ~$2.50/month for daily recommendations
+- **Inference**: SageMaker Serverless (4GB, 1min) × 22 trading days = ~$1/month for daily recommendations, avoids Lambda cold start issues with large models
 - **Storage**: ~30GB for 1,000 stocks × 365 days × 15 years (price + fundamentals + macro data + GICS metadata) for comprehensive validation
 - **DynamoDB**: Moderate usage for daily portfolio state updates, recommendation storage, and stock universe metadata
 - **Scalability**: Costs will increase to ~$58/month when expanding to Russell 3000 (3,600 slots × 64 features)
@@ -342,7 +347,8 @@ The system uses multi-phase validation combining forward testing (predictive) an
 - [ ] GICS classification mapping for Russell 1000 stocks (3-level hierarchy)
 - [ ] FinRL StockTradingEnv setup with 1,200-slot universe (1,000 active + 100 archive + 100 padding)
 - [ ] Portfolio state tracking in DynamoDB
-- [ ] Daily recommendation generation (BUY/SELL/HOLD logic)
+- [ ] Daily recommendation generation with portfolio constraints (turnover, concentration, diversification)
+- [ ] BUY/SELL/HOLD signal generation from constrained weights
 - [ ] Email notifications with daily recommendations
 - [ ] Simple dashboard with system status and current portfolio
 
@@ -399,6 +405,6 @@ The system uses multi-phase validation combining forward testing (predictive) an
 - v2.7: Changed initial scope to Russell 1000 (from Russell 3000) for simpler MVP, updated model size to 300-400 MB, reduced costs to ~$31/month, improved validation to 6-month backtesting, added clear expansion path to Russell 3000 in Milestone 3
 - v2.8: Added macro-economic context features (8 global features: interest rates, VIX, yield curve, inflation, GDP, unemployment) to improve model generalization across market regimes, integrated FRED API for free macro data, updated observation space to 38,408-dim, clarified temporal nature of macro data (daily/monthly/quarterly updates with forward-fill)
 - v2.9: Implemented comprehensive multi-phase validation strategy combining forward testing (predictive) and reverse testing (robustness) using 15 years of historical data (2010-2025), production model trains on recent 5 years (2020-2025) with rolling window, expanded storage to 22GB for full historical dataset, added regime-specific performance validation
-- v3.0: Expanded to 64 features per stock (from 32) for better future-proofing, embedded 8 macro features within per-stock features (not separate), integrated GICS 3-level classification (sector/industry group/industry), added dividend features, momentum features, reduced padding to 2 slots, added neural network architecture details (3 hidden layers [512, 512, 256], ~80M parameters), updated model size to 600-700 MB, observation space to 76,800-dim, training time to 4-5 hours, storage to 30GB, costs to ~$32/month, added permutation invariance for flexible stock positioning, renamed "Data Schema" to "Model Input/Output Structure" for clarity
+- v3.0: Expanded to 64 features per stock (from 32) for better future-proofing, embedded 8 macro features within per-stock features (not separate), integrated GICS 3-level classification (sector/industry group/industry), added dividend features, momentum features, reduced padding to 2 slots, added neural network architecture details (3 hidden layers [512, 512, 256], ~80M parameters), updated model size to 600-700 MB, observation space to 76,800-dim, training time to 4-5 hours, storage to 30GB, added permutation invariance for flexible stock positioning, renamed "Data Schema" to "Model Input/Output Structure" for clarity, switched from Lambda Container to SageMaker Serverless Inference for recommendation generation to avoid cold start issues with large models, reduced costs to ~$28/month, added GNN as future architecture consideration
 
 **Disclaimer**: This system is for educational and research purposes. Always consult with financial advisors before making investment decisions based on algorithmic signals.
