@@ -1,4 +1,4 @@
-# TMagikarp - Stock Recommendation System HLD v2.0
+# Magikarp - Stock Analyzer HLD v3.0
 
 ## Overview
 
@@ -10,7 +10,7 @@ A serverless AWS-based trading recommendation system that fetches daily stock ma
 
 1. **Automated Daily Recommendations**: Generate BUY/SELL/HOLD signals for Russell 1000 stocks every trading day using reinforcement learning
 2. **Cost-Effective Operation**: Maintain monthly operational costs under $50 using serverless architecture and free data sources
-3. **Scalable ML Pipeline**: Support 1,000+ stocks with 32 features per stock, processing within 15 minutes daily
+3. **Scalable ML Pipeline**: Support 1,000+ stocks with 64 features per stock, processing within 15 minutes daily
 4. **Model Safety**: Implement multi-gate validation (6-month backtesting + 7-day shadow mode) to prevent bad model deployments
 5. **Educational Platform**: Provide transparent, reproducible system for learning algorithmic trading and RL applications
 
@@ -20,7 +20,6 @@ A serverless AWS-based trading recommendation system that fetches daily stock ma
 2. **System Reliability**: Achieve 99.9% uptime with automated error handling and fallback mechanisms
 3. **Real-Time Monitoring**: Provide web dashboard for system health, recommendations, and portfolio state
 4. **Flexible Universe**: Support Russell 1000 annual rebalancing without model retraining using fixed-slot architecture, with clear path to expand to Russell 3000
-4. **Flexible Universe**: Support Russell 3000 annual rebalancing without model retraining using fixed-slot architecture
 
 ## Non-Goals
 
@@ -40,7 +39,6 @@ A serverless AWS-based trading recommendation system that fetches daily stock ma
 ### Future Considerations (Not in Initial Scope)
 
 - **Expansion to Russell 3000**: Add mid-cap and small-cap stocks (Russell 2000/3000)
-- Integration with brokerage APIs for automated execution
 - Advanced position sizing techniques (Kelly Criterion, volatility-based sizing, risk-adjusted sizing)
 - Risk parity and equal risk contribution strategies
 - Sentiment analysis from news and social media (using padding features)
@@ -91,27 +89,59 @@ A serverless AWS-based trading recommendation system that fetches daily stock ma
 
 ### 1. Data Ingestion Layer
 
-- **Purpose**: Fetch daily market data and quarterly fundamentals for Russell 1000 stocks
+- **Purpose**: Fetch daily market data, quarterly fundamentals, and macro-economic indicators for Russell 1000 stocks
 - **Technology**: AWS Lambda (TypeScript) with parallel processing
 - **Trigger**: CloudWatch Events (daily at 22:00 UTC, ~1 hour after market close)
-- **Data Sources**: Yahoo Finance (primary), with backup sources (Polygon.io, Alpha Vantage)
-- **Output**: Raw OHLCV data and quarterly fundamentals stored in S3
-- **Volume**: ~1,000 stocks × 365 days × ~2KB = ~730 MB/year
+- **Data Sources**: 
+  - **Stock Data**: Yahoo Finance (primary), with backup sources (Polygon.io, Alpha Vantage)
+  - **Macro Data**: FRED API (Federal Reserve Economic Data) for interest rates, inflation, GDP
+  - **Market Indicators**: Yahoo Finance for VIX, yield curve data
+- **Output**: 
+  - Raw OHLCV data and quarterly fundamentals stored in S3
+  - Daily macro-economic indicators (interest rates, VIX, yield curve) - fetched daily
+  - Monthly/quarterly macro indicators (CPI, unemployment, GDP) - fetched on release, forward-filled
+- **Volume**: 
+  - Stock data: ~1,000 stocks × 365 days × ~2KB × 15 years = ~11 GB
+  - Macro data: 8 features × 365 days × 15 years = ~750 KB
+  - Total: ~11 GB for 15-year historical dataset (2010-2025)
 
 ### 2. Data Storage Layer
 
-- **S3**: Raw market data, quarterly fundamentals, trained models (~300-400 MB), processed features
-- **DynamoDB**: System metrics, daily trading signals, portfolio state, stock universe metadata
+- **S3**: 
+  - Raw market data (15 years: 2010-2025): ~11 GB
+  - Quarterly fundamentals: ~500 MB
+  - Macro-economic data (15 years): ~1 MB
+  - Trained models: ~600-700 MB per model × 20 versions = ~14 GB
+  - Processed features: ~4 GB
+  - Total: ~30 GB
+- **DynamoDB**: 
+  - **stock_universe** table: Ticker-to-slot mapping, GICS classification, company metadata
+  - **trading_signals** table: Daily recommendations with timestamps
+  - **portfolio_state** table: Current holdings and weights
+  - **system_metrics** table: Performance tracking and validation results
 
 ### 3. ML Processing Layer (FinRL)
 
 - **Framework**: FinRL reinforcement learning with StockTradingEnv
 - **Universe**: Fixed 1,200-slot architecture (1,000 active + 100 archive + 100 padding) handles Russell 1000 rebalancing without retraining
-- **Features**: 32 per stock (15 technical + 10 fundamental + 2 temporal + 5 padding)
-- **Model Scale**: 38,400-dim observation space (1,200 × 32), 1,200-dim action space, ~300-400 MB model size
+- **Features**: 
+  - **Per-Stock Features**: 64 per stock (10 basic + 20 technical + 14 fundamental + 4 GICS + 4 momentum + 8 macro + 2 temporal + 2 padding)
+  - **Total Observation Space**: 76,800-dim (1,200 × 64 features)
+- **Model Scale**: 76,800-dim observation space, 1,200-dim action space, ~600-700 MB model size
+- **Permutation Invariance**: Stocks can be shuffled during training; model learns from features, not slot positions
 - **Algorithms**: PPO, A2C, SAC
-- **Training**: Monthly on SageMaker (ml.m5.xlarge, ~2-3 hours) using last 6 months of data
-- **Validation**: 6-month backtesting (out-of-sample) + 7-day shadow mode before production deployment
+- **Training Strategy**: Multi-phase validation approach using 15 years of historical data (2010-2025)
+  - **Phase 1 - Forward Testing**: Traditional predictive validation
+    - Train: 2010-2015 → Test: 2016-2020
+    - Train: 2015-2020 → Test: 2021-2025
+  - **Phase 2 - Reverse Testing**: Stability and robustness validation
+    - Train: 2020-2025 → Test: 2010-2015 (QE era, European crisis)
+    - Train: 2020-2025 → Test: 2015-2020 (Rate normalization, COVID)
+  - **Phase 3 - Production Deployment**: 
+    - Train: 2020-2025 (5 years, recent patterns with diverse regimes)
+    - Deploy: 2026+ with monthly retraining using rolling 5-year window
+- **Training Infrastructure**: Monthly on SageMaker (ml.m5.xlarge, ~4-5 hours)
+- **Validation Gates**: Model must pass both forward and reverse testing before production deployment
 - **Output**: Daily portfolio target weights converted to BUY/SELL/HOLD recommendations
 
 ### 4. Recommendation Generation Layer
@@ -133,14 +163,83 @@ A serverless AWS-based trading recommendation system that fetches daily stock ma
 - **Technology**: React + TypeScript hosted on AWS Amplify
 - **Features**: System health monitoring, recommendation history, portfolio state, performance metrics, interactive charts, model performance tracking
 
+## Model Input/Output Structure
+
+### Input: Observation Space
+
+The model receives a 76,800-dimensional observation vector representing 1,200 stocks, each with 64 features:
+
+**Feature Composition (64 per stock)**:
+- **Daily Basic (10)**: Price, volume, returns, dividends
+- **Technical Signals (20)**: MACD, RSI, KDJ, Bollinger Bands, moving averages, momentum indicators
+- **Fundamentals (14)**: Valuation ratios (P/E, P/B, P/S), profitability (ROE, ROA), financial health, growth metrics
+- **GICS Classification (4)**: 3-level sector hierarchy (sector, industry group, industry) + market cap category
+- **Momentum & Volume (4)**: Multi-timeframe momentum, volume patterns, 52-week positioning
+- **Macro Context (8)**: Interest rates, VIX, yield curve, CPI, GDP, unemployment (same for all stocks)
+- **Temporal (2)**: Days since IPO, days in current slot
+- **Padding (2)**: Reserved for future features (sentiment, options flow, short interest, etc.)
+
+**Input Structure**: `[stock_0_features(64), stock_1_features(64), ..., stock_1199_features(64)]` → 76,800-dim vector
+
+### Output: Action Space
+
+The model outputs a 1,200-dimensional action vector representing portfolio weights for each stock:
+
+**Output Structure**: `[action_0, action_1, ..., action_1199]` → 1,200-dim vector
+- Actions represent target portfolio weights (0.0 to 1.0, normalized via softmax to sum to 1.0)
+- Each weight indicates the percentage of portfolio allocated to that stock
+- Example: [0.05, 0.10, 0.02, ...] means 5% in stock_0, 10% in stock_1, 2% in stock_2, etc.
+
+### Model Specifications
+
+- **Observation Space**: 76,800-dim
+- **Action Space**: 1,200-dim
+- **Model Size**: ~600-700 MB
+- **Data Sources**: Yahoo Finance (stock data, fundamentals, dividends, VIX), FRED API (macro indicators)
+
+See Low-Level Design for detailed feature definitions and calculations.
+
 ## Data Flow
 
-The system operates on two main cycles:
+The system operates on multiple cycles:
 
-- **Daily**: Data ingestion (22:00 UTC) → Feature engineering → Recommendation generation (22:30 UTC) → Email notifications
-- **Monthly**: Model retraining → Validation (backtesting + shadow mode) → Production deployment
+- **Daily**: 
+  - Stock data ingestion (OHLCV + fundamentals) at 22:00 UTC
+  - Macro data ingestion (VIX, interest rates, yield curve) at 22:00 UTC
+  - Feature engineering (stock + macro features)
+  - Recommendation generation at 22:30 UTC
+  - Email notifications
+- **Monthly**: 
+  - Model retraining using 6 months of historical data (stock + macro features)
+  - Validation (backtesting + shadow mode)
+  - Production deployment
+- **As Released**: 
+  - CPI data (monthly, typically mid-month)
+  - Unemployment data (monthly, first Friday)
+  - GDP data (quarterly, end of quarter)
+  - Forward-filled between releases for daily inference
+
+**Note**: Macro features are time-series data that change over time. The model learns how different macro regimes (e.g., low rates in 2020 vs. high rates in 2023) affect optimal trading strategies. Historical macro data is stored in S3 for backtesting and training.
 
 See Low-Level Design document for detailed workflows and timing.
+
+## Model Validation Strategy
+
+The system uses multi-phase validation combining forward testing (predictive) and reverse testing (robustness) across 15 years of historical data (2010-2025):
+
+**Phase 1 - Forward Testing**: Traditional predictive validation
+- Train: 2010-2015 → Test: 2016-2020
+- Train: 2015-2020 → Test: 2021-2025
+
+**Phase 2 - Reverse Testing**: Robustness across diverse regimes
+- Train: 2020-2025 → Test: 2010-2015 (QE era, European crisis)
+- Train: 2020-2025 → Test: 2015-2020 (Rate normalization, COVID)
+
+**Phase 3 - Production**: After passing both phases
+- Train on recent 5 years (2020-2025) with monthly retraining using rolling window
+- Quarterly validation on historical data to ensure continued robustness
+
+**Success Criteria**: Sharpe ratio > 0.5, beats buy-and-hold baseline, max drawdown < 30%, no catastrophic failures during stress periods, regime-aware behavior across different macro conditions (low/high rates, low/high VIX, inverted yield curve).
 
 ## Technology Stack
 
@@ -195,25 +294,25 @@ See Low-Level Design document for detailed workflows and timing.
 
 | Service     | Usage                                  | Estimated Cost |
 | ----------- | -------------------------------------- | -------------- |
-| Market Data | Russell 1000 daily + fundamentals (Yahoo Finance) | $0 |
+| Market Data | Russell 1000 daily + fundamentals + macro (Yahoo Finance + FRED) | $0 |
 | Lambda/ECR  | ~22 daily + 1 monthly + container storage | $10         |
-| S3          | 20GB storage + API calls               | $3             |
-| SageMaker   | 3hrs/month (ml.m5.xlarge @ $0.269/hr) | $0.81/month    |
+| S3          | 30GB storage + API calls               | $4             |
+| SageMaker   | 5hrs/month (ml.m5.xlarge @ $0.269/hr) | $1.35/month    |
 | DynamoDB    | 5GB storage, moderate R/W (daily updates) | $5            |
 | SES         | ~22 daily + 1 monthly emails           | $1             |
 | Amplify     | Hosting + builds                       | $5             |
 | API Gateway | 10K requests/month                     | $1             |
 | CloudWatch  | Logs and metrics                       | $5             |
-| **Total**   |                                        | **~$31/month** |
+| **Total**   |                                        | **~$32/month** |
 
 **Cost Notes:**
 
-- **Market Data**: Free with Yahoo Finance (yfinance library) for daily OHLCV + quarterly fundamentals
-- **Training**: 3 hours × $0.269/hour = $0.81/month (1,200-slot universe, 32 features, monthly retraining)
+- **Market Data**: Free with Yahoo Finance (yfinance library) for daily OHLCV + quarterly fundamentals + dividends + VIX; FRED API (free) for macro indicators
+- **Training**: 5 hours × $0.269/hour = $1.35/month (1,200-slot universe, 64 features, monthly retraining)
 - **Inference**: Lambda Container (4GB, 2min) × 22 trading days = ~$2.50/month for daily recommendations
-- **Storage**: ~20GB for 1,000 stocks × 365 days × 3 years (price + fundamentals)
-- **DynamoDB**: Moderate usage for daily portfolio state updates and recommendation storage
-- **Scalability**: Costs will increase to ~$54/month when expanding to Russell 3000
+- **Storage**: ~30GB for 1,000 stocks × 365 days × 15 years (price + fundamentals + macro data + GICS metadata) for comprehensive validation
+- **DynamoDB**: Moderate usage for daily portfolio state updates, recommendation storage, and stock universe metadata
+- **Scalability**: Costs will increase to ~$58/month when expanding to Russell 3000 (3,600 slots × 64 features)
 
 ## Risk Management
 
@@ -221,8 +320,9 @@ See Low-Level Design document for detailed workflows and timing.
 
 - **API Rate Limits**: Multiple data sources and exponential backoff
 - **Model Performance**: 
-  - 2-month backtesting before deployment
-  - 7-day shadow mode validation
+  - Multi-phase validation (forward + reverse testing on 15 years of data)
+  - Must pass both predictive and robustness tests
+  - Regime-specific performance validation (low/high rates, low/high VIX)
   - Automated rollback on performance degradation
   - Manual approval gate for production promotion
 - **System Failures**: Automated alerts and rollback procedures
@@ -241,7 +341,9 @@ See Low-Level Design document for detailed workflows and timing.
 
 - [ ] Automated daily data ingestion for Russell 1000 (price + fundamentals) with error handling
 - [ ] Quarterly fundamentals fetching and caching from Yahoo Finance
-- [ ] Feature engineering pipeline (15 technical + 10 fundamental + 2 temporal + 5 padding features)
+- [ ] Macro-economic data ingestion (FRED API + Yahoo Finance VIX)
+- [ ] Feature engineering pipeline (64 per-stock features: 10 basic + 20 technical + 14 fundamental + 4 GICS + 4 momentum + 8 macro + 2 temporal + 2 padding)
+- [ ] GICS classification mapping for Russell 1000 stocks (3-level hierarchy)
 - [ ] FinRL StockTradingEnv setup with 1,200-slot universe (1,000 active + 100 archive + 100 padding)
 - [ ] Portfolio state tracking in DynamoDB
 - [ ] Daily recommendation generation (BUY/SELL/HOLD logic)
@@ -251,10 +353,16 @@ See Low-Level Design document for detailed workflows and timing.
 ### Milestone 2 (Enhanced - 6 weeks) - Production Ready
 
 - [ ] Advanced FinRL algorithms (PPO, A2C, SAC)
-- [ ] Enhanced model validation pipeline (6-month backtesting + 7-day shadow mode)
+- [ ] Multi-phase validation pipeline:
+  - [ ] Forward testing: Train 2010-2015 → Test 2016-2020
+  - [ ] Forward testing: Train 2015-2020 → Test 2021-2025
+  - [ ] Reverse testing: Train 2020-2025 → Test 2010-2015
+  - [ ] Reverse testing: Train 2020-2025 → Test 2015-2020
+  - [ ] Regime-specific performance validation (low/high rates, low/high VIX)
+- [ ] Historical data collection (15 years: 2010-2025) for stock + macro features
 - [ ] Comprehensive dashboard with daily performance metrics
 - [ ] Recommendation success rate tracking (30-day, 90-day)
-- [ ] Automated monthly model retraining with validation gates
+- [ ] Automated monthly model retraining with rolling 5-year window
 - [ ] Model versioning and rollback capability (last 20 versions)
 - [ ] Historical recommendation analysis
 - [ ] Russell 1000 annual rebalancing handling
@@ -293,5 +401,8 @@ See Low-Level Design document for detailed workflows and timing.
 - v2.5: Integrated fundamental analysis from day 1 - added 10 fundamental features (P/E, P/B, EPS, etc.) from Yahoo Finance, expanded to 32 features per stock (27 active + 5 padding), updated model size to 850-950 MB, adjusted costs to $54/month with free data sources, padded to power-of-2 for GPU optimization
 - v2.6: Refactored to focus on high-level architecture, moved detailed workflows and implementation details to Low-Level Design document, corrected data fetch time to 22:00 UTC (~1 hour after market close)
 - v2.7: Changed initial scope to Russell 1000 (from Russell 3000) for simpler MVP, updated model size to 300-400 MB, reduced costs to ~$31/month, improved validation to 6-month backtesting, added clear expansion path to Russell 3000 in Milestone 3
+- v2.8: Added macro-economic context features (8 global features: interest rates, VIX, yield curve, inflation, GDP, unemployment) to improve model generalization across market regimes, integrated FRED API for free macro data, updated observation space to 38,408-dim, clarified temporal nature of macro data (daily/monthly/quarterly updates with forward-fill)
+- v2.9: Implemented comprehensive multi-phase validation strategy combining forward testing (predictive) and reverse testing (robustness) using 15 years of historical data (2010-2025), production model trains on recent 5 years (2020-2025) with rolling window, expanded storage to 22GB for full historical dataset, added regime-specific performance validation
+- v3.0: Expanded to 64 features per stock (from 32) for better future-proofing, added comprehensive data schema section, integrated GICS 3-level classification (sector/industry group/industry), added dividend features, momentum features, and 10 padding slots for future expansion (sentiment, options flow, etc.), updated model size to 600-700 MB, observation space to 76,808-dim, training time to 4-5 hours, storage to 30GB, costs to ~$32/month, added permutation invariance for flexible stock positioning
 
 **Disclaimer**: This system is for educational and research purposes. Always consult with financial advisors before making investment decisions based on algorithmic signals.
