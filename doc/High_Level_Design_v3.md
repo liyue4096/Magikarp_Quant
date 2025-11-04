@@ -11,7 +11,7 @@ A serverless AWS-based trading recommendation system that fetches daily stock ma
 1. **Automated Daily Recommendations**: Generate BUY/SELL/HOLD signals for Russell 1000 stocks every trading day using reinforcement learning
 2. **Cost-Effective Operation**: Maintain monthly operational costs under $50 using serverless architecture and free data sources
 3. **Scalable ML Pipeline**: Support 1,000+ stocks with 64 features per stock, processing within 15 minutes daily
-4. **Model Safety**: Implement multi-gate validation (6-month backtesting + 7-day shadow mode) to prevent bad model deployments
+4. **Model Safety**: Implement multi-phase validation (forward + reverse testing on 15 years of data) to prevent bad model deployments
 5. **Educational Platform**: Provide transparent, reproducible system for learning algorithmic trading and RL applications
 
 ### Secondary Goals
@@ -128,20 +128,16 @@ A serverless AWS-based trading recommendation system that fetches daily stock ma
   - **Per-Stock Features**: 64 per stock (10 basic + 20 technical + 14 fundamental + 4 GICS + 4 momentum + 8 macro + 2 temporal + 2 padding)
   - **Total Observation Space**: 76,800-dim (1,200 × 64 features)
 - **Model Scale**: 76,800-dim observation space, 1,200-dim action space, ~600-700 MB model size
+- **Neural Network Architecture**: 
+  - **Policy Network**: 3 hidden layers [512, 512, 256] with ReLU activation (~40M parameters)
+  - **Value Network**: 3 hidden layers [512, 512, 256] with ReLU activation (~40M parameters)
+  - **Total Parameters**: ~80M parameters (policy + value networks)
+  - **Architecture Rationale**: Large observation space (76,800-dim) requires sufficient network capacity to learn complex patterns across 1,200 stocks
+  - **Alternative Configurations**: [256, 256] for faster MVP training, [1024, 512, 256] for maximum capacity (to be determined through experimentation)
 - **Permutation Invariance**: Stocks can be shuffled during training; model learns from features, not slot positions
-- **Algorithms**: PPO, A2C, SAC
-- **Training Strategy**: Multi-phase validation approach using 15 years of historical data (2010-2025)
-  - **Phase 1 - Forward Testing**: Traditional predictive validation
-    - Train: 2010-2015 → Test: 2016-2020
-    - Train: 2015-2020 → Test: 2021-2025
-  - **Phase 2 - Reverse Testing**: Stability and robustness validation
-    - Train: 2020-2025 → Test: 2010-2015 (QE era, European crisis)
-    - Train: 2020-2025 → Test: 2015-2020 (Rate normalization, COVID)
-  - **Phase 3 - Production Deployment**: 
-    - Train: 2020-2025 (5 years, recent patterns with diverse regimes)
-    - Deploy: 2026+ with monthly retraining using rolling 5-year window
+- **Algorithms**: PPO (primary), A2C, SAC (alternatives for comparison)
+- **Training Strategy**: Multi-phase validation (forward + reverse testing on 15 years of data) before production deployment; monthly retraining with rolling 5-year window (see Model Validation Strategy section)
 - **Training Infrastructure**: Monthly on SageMaker (ml.m5.xlarge, ~4-5 hours)
-- **Validation Gates**: Model must pass both forward and reverse testing before production deployment
 - **Output**: Daily portfolio target weights converted to BUY/SELL/HOLD recommendations
 
 ### 4. Recommendation Generation Layer
@@ -210,8 +206,8 @@ The system operates on multiple cycles:
   - Recommendation generation at 22:30 UTC
   - Email notifications
 - **Monthly**: 
-  - Model retraining using 6 months of historical data (stock + macro features)
-  - Validation (backtesting + shadow mode)
+  - Model retraining using rolling 5-year window of historical data (stock + macro features)
+  - Validation (forward + reverse testing)
   - Production deployment
 - **As Released**: 
   - CPI data (monthly, typically mid-month)
@@ -403,6 +399,6 @@ The system uses multi-phase validation combining forward testing (predictive) an
 - v2.7: Changed initial scope to Russell 1000 (from Russell 3000) for simpler MVP, updated model size to 300-400 MB, reduced costs to ~$31/month, improved validation to 6-month backtesting, added clear expansion path to Russell 3000 in Milestone 3
 - v2.8: Added macro-economic context features (8 global features: interest rates, VIX, yield curve, inflation, GDP, unemployment) to improve model generalization across market regimes, integrated FRED API for free macro data, updated observation space to 38,408-dim, clarified temporal nature of macro data (daily/monthly/quarterly updates with forward-fill)
 - v2.9: Implemented comprehensive multi-phase validation strategy combining forward testing (predictive) and reverse testing (robustness) using 15 years of historical data (2010-2025), production model trains on recent 5 years (2020-2025) with rolling window, expanded storage to 22GB for full historical dataset, added regime-specific performance validation
-- v3.0: Expanded to 64 features per stock (from 32) for better future-proofing, added comprehensive data schema section, integrated GICS 3-level classification (sector/industry group/industry), added dividend features, momentum features, and 10 padding slots for future expansion (sentiment, options flow, etc.), updated model size to 600-700 MB, observation space to 76,808-dim, training time to 4-5 hours, storage to 30GB, costs to ~$32/month, added permutation invariance for flexible stock positioning
+- v3.0: Expanded to 64 features per stock (from 32) for better future-proofing, embedded 8 macro features within per-stock features (not separate), integrated GICS 3-level classification (sector/industry group/industry), added dividend features, momentum features, reduced padding to 2 slots, added neural network architecture details (3 hidden layers [512, 512, 256], ~80M parameters), updated model size to 600-700 MB, observation space to 76,800-dim, training time to 4-5 hours, storage to 30GB, costs to ~$32/month, added permutation invariance for flexible stock positioning, renamed "Data Schema" to "Model Input/Output Structure" for clarity
 
 **Disclaimer**: This system is for educational and research purposes. Always consult with financial advisors before making investment decisions based on algorithmic signals.
