@@ -46,6 +46,11 @@ export class DatabaseConstruct extends Construct {
      */
     public readonly universeMetadataTable: dynamodb.ITable;
 
+    /**
+     * Macroeconomic indicators table - stores daily macroeconomic data
+     */
+    public readonly macroIndicatorsTable: dynamodb.ITable;
+
     constructor(scope: Construct, id: string, props?: DatabaseConstructProps) {
         super(scope, id);
 
@@ -136,5 +141,24 @@ export class DatabaseConstruct extends Construct {
         cdk.Tags.of(this.universeMetadataTable).add('Project', 'Magikarp');
         cdk.Tags.of(this.universeMetadataTable).add('Environment', environment);
         cdk.Tags.of(this.universeMetadataTable).add('ManagedBy', 'CDK');
+
+        // Macroeconomic Indicators Table
+        this.macroIndicatorsTable = new dynamodb.Table(this, 'MacroIndicatorsTable', {
+            tableName: `${prefix}macro-indicators`,
+            partitionKey: {
+                name: 'date',
+                type: dynamodb.AttributeType.STRING
+            },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            pointInTimeRecoverySpecification: {
+                pointInTimeRecoveryEnabled: true
+            },
+            removalPolicy: cdk.RemovalPolicy.RETAIN
+        });
+
+        // Apply tags to Macroeconomic Indicators Table
+        cdk.Tags.of(this.macroIndicatorsTable).add('Project', 'Magikarp');
+        cdk.Tags.of(this.macroIndicatorsTable).add('Environment', environment);
+        cdk.Tags.of(this.macroIndicatorsTable).add('ManagedBy', 'CDK');
     }
 }
