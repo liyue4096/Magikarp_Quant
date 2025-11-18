@@ -34,10 +34,54 @@ npm run build
 ## Environment Variables
 
 Required environment variables:
-- `FRED_API_KEY` - API key for FRED API
-- `ALPHA_VANTAGE_API_KEY` - API key for Alpha Vantage
+- `FRED_API_KEY_PARAMETER` - SSM Parameter Store name for FRED API key (e.g., `/magikarp/dev/fred-api-key`)
 - `MACRO_INDICATORS_TABLE` - DynamoDB table name
 - `AWS_REGION` - AWS region (default: us-west-2)
+
+## API Key Management
+
+### SSM Parameter Store (Recommended)
+
+The Lambda function fetches the FRED API key from AWS Systems Manager Parameter Store on initialization. This provides:
+- Secure storage with KMS encryption
+- Automatic caching to avoid repeated SSM calls
+- Easy key rotation without redeploying the Lambda function
+
+#### Setting up the FRED API Key
+
+After deploying the CDK stack, you need to update the SSM Parameter with your actual FRED API key:
+
+```bash
+# For dev environment
+aws ssm put-parameter \
+  --name "/magikarp/dev/fred-api-key" \
+  --value "YOUR_FRED_API_KEY" \
+  --type "SecureString" \
+  --overwrite
+
+# For prod environment
+aws ssm put-parameter \
+  --name "/magikarp/prod/fred-api-key" \
+  --value "YOUR_FRED_API_KEY" \
+  --type "SecureString" \
+  --overwrite
+```
+
+#### Retrieving the Parameter Name
+
+The CDK stack outputs the parameter name after deployment:
+```bash
+# Get the parameter name from CDK outputs
+aws cloudformation describe-stacks \
+  --stack-name MagikarpCdkStack \
+  --query "Stacks[0].Outputs[?OutputKey=='FredApiKeyParameterName'].OutputValue" \
+  --output text
+```
+
+### Legacy: Environment Variables
+
+For local testing or backward compatibility, you can also provide the FRED API key directly via environment variables:
+- `FRED_API_KEY` - API key for FRED API (not recommended for production)
 
 ## Usage
 

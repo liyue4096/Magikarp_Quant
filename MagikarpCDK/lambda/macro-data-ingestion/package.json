@@ -5,11 +5,14 @@
     "main": "index.js",
     "scripts": {
         "build": "tsc",
-        "test": "jest"
+        "test": "jest --no-watch",
+        "test:watch": "jest --watch",
+        "test:coverage": "jest --coverage --no-watch"
     },
     "dependencies": {
         "@aws-sdk/client-dynamodb": "^3.0.0",
         "@aws-sdk/client-secrets-manager": "^3.0.0",
+        "@aws-sdk/client-ssm": "^3.933.0",
         "@aws-sdk/util-dynamodb": "^3.0.0",
         "axios": "^1.6.0",
         "yahoo-finance2": "^2.11.0"

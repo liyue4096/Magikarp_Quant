@@ -6,8 +6,8 @@ import { MacroIndicators, ValidationRule, ValidationResult } from './types';
 
 export const VALIDATION_RULES: Record<string, ValidationRule> = {
     gdp_growth: { min: -50, max: 50, required: false },  // Quarterly data
-    cpi: { min: 0, max: 1000, required: true },
-    cpi_yoy: { min: -20, max: 50, required: true },
+    cpi: { min: 0, max: 1000, required: false },  // Monthly data - may not be available for recent dates
+    cpi_yoy: { min: -20, max: 50, required: false },  // Calculated from CPI - optional if CPI unavailable
     interest_rate: { min: 0, max: 20, required: true },
     vix: { min: 0, max: 100, required: true },
     dxy: { min: 50, max: 200, required: true },
@@ -34,12 +34,12 @@ function validateNumericValues(data: MacroIndicators): string[] {
     for (const field of numericFields) {
         const value = data[field];
 
-        // Skip optional fields that are undefined
-        if (value === undefined && !VALIDATION_RULES[field].required) {
+        // Skip optional fields that are undefined or null
+        if ((value === undefined || value === null) && !VALIDATION_RULES[field].required) {
             continue;
         }
 
-        // Check for null
+        // Check for null on required fields
         if (value === null) {
             errors.push(`${field} is null`);
             continue;
@@ -78,8 +78,8 @@ export function validateRanges(data: MacroIndicators): string[] {
     for (const [field, rule] of Object.entries(VALIDATION_RULES)) {
         const value = data[field as keyof MacroIndicators];
 
-        // Skip optional fields that are undefined
-        if (value === undefined && !rule.required) {
+        // Skip optional fields that are undefined or null
+        if ((value === undefined || value === null) && !rule.required) {
             continue;
         }
 

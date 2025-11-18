@@ -19,8 +19,10 @@ const DEFAULT_BACKFILL_START_DATE = '2000-01-03';
  * Lambda handler function
  * 
  * Event structure:
- * - For daily fetch: { date?: string } or empty event {}
- * - For backfill: { action: 'backfill', startDate?: string, endDate?: string }
+ * - For daily fetch: { date?: string, apiKeyIndex?: number } or empty event {}
+ * - For backfill: { action: 'backfill', startDate?: string, endDate?: string, apiKeyIndex?: number }
+ * 
+ * apiKeyIndex: Optional 1-5 to use specific FRED API key (defaults to 1)
  * 
  * @param event Lambda event object
  * @returns FetchResult or BackfillResult in Lambda-compatible format
@@ -29,10 +31,25 @@ export async function handler(event: any): Promise<FetchResult | BackfillResult>
     // Log invocation details for debugging
     console.log('Macro data ingestion Lambda invoked');
     console.log('Event:', JSON.stringify(event, null, 2));
+
+    // Set API key index from event (1-5, defaults to 1)
+    const apiKeyIndex = event.apiKeyIndex || 1;
+    if (apiKeyIndex < 1 || apiKeyIndex > 5) {
+        throw new Error(`Invalid apiKeyIndex: ${apiKeyIndex}. Must be between 1 and 5.`);
+    }
+
+    // Get environment from environment variable (set by CDK)
+    const environment = process.env.ENVIRONMENT || 'dev';
+
+    // Set environment variable for API key parameter name
+    process.env.FRED_API_KEY_PARAMETER = `/magikarp/${environment}/fred-api-key-${apiKeyIndex}`;
+
     console.log('Environment:', {
         tableName: process.env.MACRO_INDICATORS_TABLE,
         region: process.env.AWS_REGION,
-        hasFredApiKey: !!process.env.FRED_API_KEY
+        environment: environment,
+        apiKeyIndex: apiKeyIndex,
+        apiKeyParameter: process.env.FRED_API_KEY_PARAMETER
     });
 
     try {

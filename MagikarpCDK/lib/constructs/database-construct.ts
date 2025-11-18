@@ -61,104 +61,39 @@ export class DatabaseConstruct extends Construct {
         // Get environment for tagging
         const environment = props?.environment || 'dev';
 
-        // Portfolio State Table
-        this.portfolioStateTable = new dynamodb.Table(this, 'PortfolioStateTable', {
-            tableName: `${prefix}portfolio-state`,
-            partitionKey: {
-                name: 'id',
-                type: dynamodb.AttributeType.STRING
-            },
-            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-            pointInTimeRecoverySpecification: {
-                pointInTimeRecoveryEnabled: true
-            },
-            removalPolicy: cdk.RemovalPolicy.RETAIN
-        });
+        // Portfolio State Table - Import existing table
+        this.portfolioStateTable = dynamodb.Table.fromTableName(
+            this,
+            'PortfolioStateTable',
+            `${prefix}portfolio-state`
+        );
 
-        // Apply tags to Portfolio State Table
-        cdk.Tags.of(this.portfolioStateTable).add('Project', 'Magikarp');
-        cdk.Tags.of(this.portfolioStateTable).add('Environment', environment);
-        cdk.Tags.of(this.portfolioStateTable).add('ManagedBy', 'CDK');
+        // Recommendations Table - Import existing table
+        this.recommendationsTable = dynamodb.Table.fromTableName(
+            this,
+            'RecommendationsTable',
+            `${prefix}recommendations`
+        );
 
-        // Recommendations Table
-        this.recommendationsTable = new dynamodb.Table(this, 'RecommendationsTable', {
-            tableName: `${prefix}recommendations`,
-            partitionKey: {
-                name: 'date',
-                type: dynamodb.AttributeType.STRING
-            },
-            sortKey: {
-                name: 'symbol',
-                type: dynamodb.AttributeType.STRING
-            },
-            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-            pointInTimeRecoverySpecification: {
-                pointInTimeRecoveryEnabled: true
-            },
-            timeToLiveAttribute: 'ttl',
-            removalPolicy: cdk.RemovalPolicy.DESTROY
-        });
+        // Performance Metrics Table - Import existing table
+        this.performanceMetricsTable = dynamodb.Table.fromTableName(
+            this,
+            'PerformanceMetricsTable',
+            `${prefix}performance-metrics`
+        );
 
-        // Apply tags to Recommendations Table
-        cdk.Tags.of(this.recommendationsTable).add('Project', 'Magikarp');
-        cdk.Tags.of(this.recommendationsTable).add('Environment', environment);
-        cdk.Tags.of(this.recommendationsTable).add('ManagedBy', 'CDK');
+        // Universe Metadata Table - Import existing table
+        this.universeMetadataTable = dynamodb.Table.fromTableName(
+            this,
+            'UniverseMetadataTable',
+            `${prefix}universe-metadata`
+        );
 
-        // Performance Metrics Table
-        this.performanceMetricsTable = new dynamodb.Table(this, 'PerformanceMetricsTable', {
-            tableName: `${prefix}performance-metrics`,
-            partitionKey: {
-                name: 'date',
-                type: dynamodb.AttributeType.STRING
-            },
-            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-            pointInTimeRecoverySpecification: {
-                pointInTimeRecoveryEnabled: true
-            },
-            removalPolicy: cdk.RemovalPolicy.RETAIN
-        });
-
-        // Apply tags to Performance Metrics Table
-        cdk.Tags.of(this.performanceMetricsTable).add('Project', 'Magikarp');
-        cdk.Tags.of(this.performanceMetricsTable).add('Environment', environment);
-        cdk.Tags.of(this.performanceMetricsTable).add('ManagedBy', 'CDK');
-
-        // Universe Metadata Table
-        this.universeMetadataTable = new dynamodb.Table(this, 'UniverseMetadataTable', {
-            tableName: `${prefix}universe-metadata`,
-            partitionKey: {
-                name: 'symbol',
-                type: dynamodb.AttributeType.STRING
-            },
-            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-            pointInTimeRecoverySpecification: {
-                pointInTimeRecoveryEnabled: true
-            },
-            removalPolicy: cdk.RemovalPolicy.RETAIN
-        });
-
-        // Apply tags to Universe Metadata Table
-        cdk.Tags.of(this.universeMetadataTable).add('Project', 'Magikarp');
-        cdk.Tags.of(this.universeMetadataTable).add('Environment', environment);
-        cdk.Tags.of(this.universeMetadataTable).add('ManagedBy', 'CDK');
-
-        // Macroeconomic Indicators Table
-        this.macroIndicatorsTable = new dynamodb.Table(this, 'MacroIndicatorsTable', {
-            tableName: `${prefix}macro-indicators`,
-            partitionKey: {
-                name: 'date',
-                type: dynamodb.AttributeType.STRING
-            },
-            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-            pointInTimeRecoverySpecification: {
-                pointInTimeRecoveryEnabled: true
-            },
-            removalPolicy: cdk.RemovalPolicy.RETAIN
-        });
-
-        // Apply tags to Macroeconomic Indicators Table
-        cdk.Tags.of(this.macroIndicatorsTable).add('Project', 'Magikarp');
-        cdk.Tags.of(this.macroIndicatorsTable).add('Environment', environment);
-        cdk.Tags.of(this.macroIndicatorsTable).add('ManagedBy', 'CDK');
+        // Macroeconomic Indicators Table - Import existing table
+        this.macroIndicatorsTable = dynamodb.Table.fromTableName(
+            this,
+            'MacroIndicatorsTable',
+            `${prefix}macro-indicators`
+        );
     }
 }

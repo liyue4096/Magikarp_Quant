@@ -5,8 +5,8 @@
 export interface MacroIndicators {
     date: string;  // Partition key (YYYY-MM-DD)
     gdp_growth?: number;  // Quarterly, annualized %
-    cpi: number;  // Index value
-    cpi_yoy: number;  // % change
+    cpi?: number;  // Index value
+    cpi_yoy?: number;  // % change
     interest_rate: number;  // %
     vix: number;  // Index value
     dxy: number;  // Index value

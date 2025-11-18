@@ -12,20 +12,22 @@ import { getTradingDaysBetween, isMarketOpen } from './market-calendar';
 /**
  * Load configuration from environment variables
  * Requirements: 9.1, 9.2, 9.3, 9.4, 9.5
+ * 
+ * Note: FRED API key is fetched from SSM Parameter Store during service initialization,
+ * not from environment variables. This function validates other required environment variables.
  */
-export function loadConfigFromEnv(): MacroDataConfig {
-    const fredApiKey = process.env.FRED_API_KEY;
-    if (!fredApiKey) {
-        throw new Error('Missing required environment variable: FRED_API_KEY');
-    }
-
+export function loadConfigFromEnv(): Omit<MacroDataConfig, 'fredApiKey'> {
     const tableName = process.env.MACRO_INDICATORS_TABLE;
     if (!tableName) {
         throw new Error('Missing required environment variable: MACRO_INDICATORS_TABLE');
     }
 
+    const fredApiKeyParameter = process.env.FRED_API_KEY_PARAMETER;
+    if (!fredApiKeyParameter) {
+        throw new Error('Missing required environment variable: FRED_API_KEY_PARAMETER');
+    }
+
     return {
-        fredApiKey,
         tableName,
         awsRegion: process.env.AWS_REGION || 'us-west-2',
         retryAttempts: 3,
@@ -37,28 +39,51 @@ export function loadConfigFromEnv(): MacroDataConfig {
  * Main service class for macro data ingestion
  * Orchestrates fetching data from multiple sources, calculating derived metrics,
  * validating data, and storing in DynamoDB
+ * 
+ * Requirements: 9.1, 9.2, 9.5
  */
 export class MacroDataIngestionService {
-    private fredClient: FredApiClient;
+    private fredClient: FredApiClient | null = null;
     private yahooClient: YahooFinanceClient;
     private dynamoClient: DynamoDBClient;
     private tableName: string;
-    private config: MacroDataConfig;
+    private config: Omit<MacroDataConfig, 'fredApiKey'>;
+    private initialized: boolean = false;
 
     constructor(config?: MacroDataConfig) {
-        // Load config from environment if not provided
-        this.config = config || loadConfigFromEnv();
+        if (config) {
+            // If full config is provided (for testing), use it directly
+            this.config = {
+                tableName: config.tableName,
+                awsRegion: config.awsRegion,
+                retryAttempts: config.retryAttempts,
+                retryBackoffBase: config.retryBackoffBase
+            };
 
-        // Initialize API clients
-        this.fredClient = new FredApiClient(
-            this.config.fredApiKey,
-            this.config.retryAttempts,
-            this.config.retryBackoffBase
-        );
-        this.yahooClient = new YahooFinanceClient(
-            this.config.retryAttempts,
-            this.config.retryBackoffBase
-        );
+            // Initialize API clients immediately
+            this.fredClient = new FredApiClient(
+                config.fredApiKey,
+                config.retryAttempts,
+                config.retryBackoffBase
+            );
+            this.yahooClient = new YahooFinanceClient(
+                config.retryAttempts,
+                config.retryBackoffBase
+            );
+            this.initialized = true;
+        } else {
+            // Load config from environment (without FRED API key)
+            this.config = loadConfigFromEnv();
+
+            // Initialize Yahoo client (doesn't need API key)
+            this.yahooClient = new YahooFinanceClient(
+                this.config.retryAttempts,
+                this.config.retryBackoffBase
+            );
+
+            // FRED client will be initialized lazily on first use
+            // This allows us to fetch the API key from SSM Parameter Store
+        }
 
         // Initialize DynamoDB client
         this.dynamoClient = new DynamoDBClient({
@@ -69,11 +94,63 @@ export class MacroDataIngestionService {
     }
 
     /**
+     * Initialize the service by fetching API keys from SSM Parameter Store
+     * Requirements: 9.1, 9.2, 9.5
+     * 
+     * This method is called automatically on first use, but can be called explicitly
+     * to handle initialization errors early.
+     */
+    private async initialize(): Promise<void> {
+        if (this.initialized) {
+            return;
+        }
+
+        console.log('Initializing MacroDataIngestionService...');
+
+        try {
+            // Fetch FRED API key from SSM Parameter Store (Requirement 9.1, 9.2)
+            const { getFredApiKey } = await import('./secrets.js');
+            const fredApiKey = await getFredApiKey();
+
+            // Initialize FRED client with API key from Parameter Store
+            this.fredClient = new FredApiClient(
+                fredApiKey,
+                this.config.retryAttempts,
+                this.config.retryBackoffBase
+            );
+
+            this.initialized = true;
+            console.log('MacroDataIngestionService initialized successfully');
+
+        } catch (error) {
+            console.error('Failed to initialize MacroDataIngestionService:', error);
+            throw new Error(`Service initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
+     * Ensure the service is initialized before use
+     * Requirements: 9.1, 9.2, 9.5
+     */
+    private async ensureInitialized(): Promise<void> {
+        if (!this.initialized) {
+            await this.initialize();
+        }
+
+        if (!this.fredClient) {
+            throw new Error('FRED client not initialized');
+        }
+    }
+
+    /**
      * Fetch data from FRED API for a specific series and date
      * Private helper method for internal use
      */
     private async fetchFredData(seriesId: string, date: string): Promise<number | null> {
         try {
+            if (!this.fredClient) {
+                throw new Error('FRED client not initialized');
+            }
             return await this.fredClient.fetchSeries(seriesId, date);
         } catch (error) {
             console.error(`Error fetching FRED series ${seriesId} for ${date}:`, error);
@@ -104,6 +181,11 @@ export class MacroDataIngestionService {
      */
     private async calculateCpiYoy(currentCpi: number, date: string): Promise<number | null> {
         try {
+            // Ensure fredClient is initialized
+            if (!this.fredClient) {
+                throw new Error('FRED client not initialized');
+            }
+
             // Calculate date one year ago
             const currentDate = new Date(date);
             const previousYearDate = new Date(currentDate);
@@ -230,18 +312,22 @@ export class MacroDataIngestionService {
     /**
      * Fetch and store macroeconomic data for a specific date
      * Orchestrates the entire data pipeline:
-     * 1. Fetch data from all sources in parallel
-     * 2. Validate VIX data
-     * 3. Calculate derived metrics
-     * 4. Validate all data
-     * 5. Write to DynamoDB
+     * 1. Initialize service (fetch API keys from SSM Parameter Store)
+     * 2. Fetch data from all sources in parallel
+     * 3. Validate VIX data
+     * 4. Calculate derived metrics
+     * 5. Validate all data
+     * 6. Write to DynamoDB
      * 
-     * Requirements: 1.1-1.8, 2.1-2.3, 3.1, 4.1, 6.4
+     * Requirements: 1.1-1.8, 2.1-2.3, 3.1, 4.1, 6.4, 9.1, 9.2, 9.5
      * 
      * @param date Date in YYYY-MM-DD format
      * @returns FetchResult with success status, data, and any errors
      */
     async fetchDailyData(date: string): Promise<FetchResult> {
+        // Ensure service is initialized (fetch API keys from SSM Parameter Store)
+        // Requirements: 9.1, 9.2, 9.5
+        await this.ensureInitialized();
         // Check if this is a trading day
         if (!isMarketOpen(date)) {
             console.warn(`${date} is not a trading day (weekend or holiday). Skipping.`);
@@ -258,6 +344,12 @@ export class MacroDataIngestionService {
         try {
             // Step 1: Fetch data from all sources in parallel (Requirements 1.1-1.8, 6.4)
             console.log('Fetching data from all sources in parallel...');
+
+            // Ensure fredClient is initialized
+            if (!this.fredClient) {
+                throw new Error('FRED client not initialized');
+            }
+
             const [
                 gdpGrowth,
                 cpi,
@@ -290,7 +382,7 @@ export class MacroDataIngestionService {
 
             // Calculate CPI year-over-year change (Requirement 2.2)
             let cpiYoy: number | null = null;
-            if (cpi !== null) {
+            if (cpi !== null && this.fredClient) {
                 cpiYoy = await this.calculateCpiYoy(cpi, date);
                 if (cpiYoy === null) {
                     console.warn(`Could not calculate CPI YoY for ${date}`);
@@ -303,13 +395,7 @@ export class MacroDataIngestionService {
                 yieldCurveSpread = this.calculateYieldSpread(treasury10y, treasury2y);
             }
 
-            // Check for required fields
-            if (cpi === null) {
-                errors.push('CPI data is required but not available');
-            }
-            if (cpiYoy === null) {
-                errors.push('CPI YoY data is required but could not be calculated');
-            }
+            // Check for required fields (CPI and CPI YoY are optional - monthly data)
             if (interestRate === null) {
                 errors.push('Interest rate data is required but not available');
             }
@@ -342,25 +428,30 @@ export class MacroDataIngestionService {
                 };
             }
 
+            // Helper function to round to 2 decimal places
+            const round = (value: number | null): number | undefined => {
+                return value !== null ? Math.round(value * 100) / 100 : undefined;
+            };
+
             // Build MacroIndicators object (Requirement 2.3)
             const macroData: MacroIndicators = {
                 date,
-                gdp_growth: gdpGrowth !== null ? gdpGrowth : undefined,  // Optional field
-                cpi: cpi!,  // Required, checked above
-                cpi_yoy: cpiYoy!,  // Required, checked above
-                interest_rate: interestRate!,  // Required, checked above
-                vix: vix!,  // Required, checked above
-                dxy: dxy!,  // Required, checked above
-                treasury_2y: treasury2y!,  // Required, checked above
-                treasury_10y: treasury10y!,  // Required, checked above
-                yield_curve_spread: yieldCurveSpread!,  // Required, checked above
-                ice_bofa_bbb: iceBofaBbb!,  // Required, checked above
+                gdp_growth: round(gdpGrowth),  // Optional field
+                cpi: round(cpi),  // Optional field
+                cpi_yoy: round(cpiYoy),  // Optional field
+                interest_rate: round(interestRate)!,  // Required, checked above
+                vix: round(vix)!,  // Required, checked above
+                dxy: round(dxy)!,  // Required, checked above
+                treasury_2y: round(treasury2y)!,  // Required, checked above
+                treasury_10y: round(treasury10y)!,  // Required, checked above
+                yield_curve_spread: round(yieldCurveSpread)!,  // Required, checked above
+                ice_bofa_bbb: round(iceBofaBbb)!,  // Required, checked above
                 last_updated: new Date().toISOString()
             };
 
             // Step 4: Validate all data using validation module (Requirement 3.1)
             console.log('Validating data...');
-            const { validateData } = await import('./validation');
+            const { validateData } = await import('./validation.js');
             const validationResult = validateData(macroData);
 
             // Log validation errors/warnings
@@ -368,8 +459,8 @@ export class MacroDataIngestionService {
                 console.warn(`Validation issues for ${date}:`, validationResult.errors);
 
                 // Separate warnings from errors
-                const warnings = validationResult.errors.filter(e => e.startsWith('WARNING:'));
-                const validationErrors = validationResult.errors.filter(e => !e.startsWith('WARNING:'));
+                const warnings = validationResult.errors.filter((e: string) => e.startsWith('WARNING:'));
+                const validationErrors = validationResult.errors.filter((e: string) => !e.startsWith('WARNING:'));
 
                 // Log warnings but don't fail
                 if (warnings.length > 0) {
@@ -420,7 +511,7 @@ export class MacroDataIngestionService {
     /**
      * Backfill historical data for a date range
      * Processes dates in batches with rate limiting delays
-     * Requirements: 5.1, 5.2, 5.3, 5.4
+     * Requirements: 5.1, 5.2, 5.3, 5.4, 9.1, 9.2, 9.5
      * 
      * @param startDate Start date in YYYY-MM-DD format
      * @param endDate End date in YYYY-MM-DD format
@@ -432,6 +523,9 @@ export class MacroDataIngestionService {
         endDate: string,
         batchSize: number = 10
     ): Promise<BackfillResult> {
+        // Ensure service is initialized (fetch API keys from SSM Parameter Store)
+        // Requirements: 9.1, 9.2, 9.5
+        await this.ensureInitialized();
         // Requirement 5.1: Generate array of dates in the specified range
         // Get only trading days in the range (skip weekends and holidays)
         const tradingDays = getTradingDaysBetween(startDate, endDate);
