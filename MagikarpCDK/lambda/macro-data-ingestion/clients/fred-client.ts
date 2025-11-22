@@ -58,6 +58,10 @@ export class FredApiClient {
                     file_type: 'json',
                     observation_start: date,
                     observation_end: date
+                },
+                headers: {
+                    'User-Agent': 'Magikarp-MacroData-Ingestion/1.0',
+                    'Accept': 'application/json'
                 }
             });
 
@@ -136,6 +140,40 @@ export class FredApiClient {
     }
 
     /**
+     * Fetch FRED series data with automatic fallback to previous business days
+     * 
+     * @param seriesId FRED series identifier
+     * @param targetDate Target date to fetch (typically previous business day)
+     * @param maxAttempts Maximum number of previous business days to try (default: 5)
+     * @returns Value or null if not found
+     */
+    async fetchSeriesWithFallback(
+        seriesId: string,
+        targetDate: string,
+        maxAttempts: number = 5
+    ): Promise<number | null> {
+        const { getPreviousBusinessDays } = await import('../market-calendar.js');
+
+        // Try target date first, then previous business days
+        const datesToTry = [targetDate, ...getPreviousBusinessDays(targetDate, maxAttempts - 1)];
+
+        for (let i = 0; i < datesToTry.length; i++) {
+            const dateToTry = datesToTry[i];
+            const value = await this.fetchSeries(seriesId, dateToTry);
+
+            if (value !== null) {
+                if (i > 0) {
+                    console.warn(`Using ${i}-day-old data for ${seriesId}: ${dateToTry}`);
+                }
+                return value;
+            }
+        }
+
+        console.error(`No data found for ${seriesId} after ${maxAttempts} attempts`);
+        return null;
+    }
+
+    /**
      * Enforce rate limiting (120 requests per minute)
      * Adds delay if necessary to stay within rate limits
      */
@@ -181,6 +219,12 @@ export class FredApiClient {
                     continue;
                 }
 
+                if (this.is403Error(error)) {
+                    console.error('403 Access Denied - API key may be invalid, blocked, or rate limited by WAF:', this.getErrorMessage(error));
+                    console.error('Check: 1) API key validity, 2) IP not blocked, 3) Rate limits not exceeded');
+                    return null;
+                }
+
                 if (this.isNetworkError(error)) {
                     if (isLastAttempt) {
                         console.error(`Network error after ${this.maxRetries} attempts:`, this.getErrorMessage(error));
@@ -219,6 +263,16 @@ export class FredApiClient {
     private isRateLimitError(error: unknown): boolean {
         if (axios.isAxiosError(error)) {
             return error.response?.status === 429;
+        }
+        return false;
+    }
+
+    /**
+     * Check if error is a 403 Forbidden error
+     */
+    private is403Error(error: unknown): boolean {
+        if (axios.isAxiosError(error)) {
+            return error.response?.status === 403;
         }
         return false;
     }

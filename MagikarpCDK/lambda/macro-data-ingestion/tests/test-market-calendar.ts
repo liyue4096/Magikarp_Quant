@@ -17,7 +17,9 @@ import {
     getNextTradingDay,
     getPreviousTradingDay,
     getTradingDaysBetween,
-    getMostRecentTradingDay
+    getMostRecentTradingDay,
+    getPreviousBusinessDay,
+    getPreviousBusinessDays
 } from '../market-calendar';
 
 function testMarketCalendar() {
@@ -111,6 +113,55 @@ function testMarketCalendar() {
     console.log(`Trading days in year 2000: ${backfillDays.length}`);
     console.log(`First day: ${backfillDays[0]}`);
     console.log(`Last day: ${backfillDays[backfillDays.length - 1]}`);
+    console.log();
+
+    // Test 11: getPreviousBusinessDay function
+    console.log('Test 11: getPreviousBusinessDay Function');
+    const monday2025 = '2025-11-17'; // Monday
+    const tuesday2025 = '2025-11-18'; // Tuesday
+    const sunday2025 = '2025-11-16'; // Sunday
+
+    const prevFromMonday = getPreviousBusinessDay(monday2025);
+    console.log(`Previous business day from ${monday2025} (Monday): ${prevFromMonday}`);
+    console.log(`Expected: 2025-11-14 (Friday), Got: ${prevFromMonday} ${prevFromMonday === '2025-11-14' ? '✓' : '✗'}`);
+
+    const prevFromTuesday = getPreviousBusinessDay(tuesday2025);
+    console.log(`Previous business day from ${tuesday2025} (Tuesday): ${prevFromTuesday}`);
+    console.log(`Expected: 2025-11-17 (Monday), Got: ${prevFromTuesday} ${prevFromTuesday === '2025-11-17' ? '✓' : '✗'}`);
+
+    const prevFromSunday = getPreviousBusinessDay(sunday2025);
+    console.log(`Previous business day from ${sunday2025} (Sunday): ${prevFromSunday}`);
+    console.log(`Expected: 2025-11-14 (Friday), Got: ${prevFromSunday} ${prevFromSunday === '2025-11-14' ? '✓' : '✗'}`);
+    console.log();
+
+    // Test 12: getPreviousBusinessDays function
+    console.log('Test 12: getPreviousBusinessDays Function');
+    const testDate = '2025-11-18'; // Tuesday
+    const prev5Days = getPreviousBusinessDays(testDate, 5);
+
+    console.log(`5 previous business days from ${testDate}:`);
+    console.log(`Days: ${prev5Days.join(', ')}`);
+    console.log(`Count: ${prev5Days.length} ${prev5Days.length === 5 ? '✓' : '✗'}`);
+    console.log(`Most recent: ${prev5Days[0]} (Expected: 2025-11-17) ${prev5Days[0] === '2025-11-17' ? '✓' : '✗'}`);
+    console.log(`5th back: ${prev5Days[4]} (Expected: 2025-11-11) ${prev5Days[4] === '2025-11-11' ? '✓' : '✗'}`);
+
+    // Verify all returned days are business days
+    const allBusinessDays = prev5Days.every(day => isMarketOpen(day));
+    console.log(`All returned days are business days: ${allBusinessDays ? '✓' : '✗'}`);
+    console.log();
+
+    // Test 13: getPreviousBusinessDays with holiday
+    console.log('Test 13: getPreviousBusinessDays Skipping Holiday');
+    const afterJuly4th = '2025-07-07'; // Monday after July 4th weekend
+    const prev3Days = getPreviousBusinessDays(afterJuly4th, 3);
+
+    console.log(`3 previous business days from ${afterJuly4th} (after July 4th):`);
+    console.log(`Days: ${prev3Days.join(', ')}`);
+    console.log(`Count: ${prev3Days.length} ${prev3Days.length === 3 ? '✓' : '✗'}`);
+
+    // Verify all are business days (should skip July 4th, 5th, 6th)
+    const allValidBusinessDays = prev3Days.every(day => isMarketOpen(day));
+    console.log(`All returned days are business days: ${allValidBusinessDays ? '✓' : '✗'}`);
     console.log();
 
     console.log('=== Test Complete ===');

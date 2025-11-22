@@ -1,14 +1,76 @@
-# Welcome to your CDK TypeScript project
+# Magikarp CDK
 
-This is a blank project for CDK development with TypeScript.
+AWS CDK infrastructure for the Magikarp trading system. Deploys DynamoDB tables and Lambda functions for macro data ingestion.
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+## Quick Start
 
-## Useful commands
+### 1. Setup API Keys
 
-* `npm run build`   compile typescript to js
-* `npm run watch`   watch for changes and compile
-* `npm run test`    perform the jest unit tests
-* `npx cdk deploy`  deploy this stack to your default AWS account/region
-* `npx cdk diff`    compare deployed stack with current state
-* `npx cdk synth`   emits the synthesized CloudFormation template
+```bash
+# Create environment files
+echo "FRED_API_KEY=your_key_here" > .env.dev
+echo "FRED_API_KEY=your_key_here" > .env.prod
+
+# Upload to AWS SSM Parameter Store
+./scripts/setup-api-keys.sh dev
+./scripts/setup-api-keys.sh prod
+```
+
+### 2. Deploy
+
+```bash
+# Install dependencies
+npm install
+
+# Deploy to dev
+cdk deploy --context environment=dev
+
+# Deploy to prod
+cdk deploy --context environment=prod
+```
+
+### 3. Backfill Data
+
+```bash
+# Scan for missing data
+./scripts/backfill-missing-data.sh dev --scan-only
+
+# Review missing_dates.txt, then backfill
+./scripts/backfill-missing-data.sh dev --from-file missing_dates.txt
+```
+
+## Project Structure
+
+```
+MagikarpCDK/
+├── bin/                    # CDK app entry point
+├── lib/                    # CDK stack definitions
+│   └── constructs/        # Reusable CDK constructs
+├── lambda/                # Lambda function code
+│   └── macro-data-ingestion/
+└── scripts/               # Utility scripts
+```
+
+## Commands
+
+```bash
+npm run build      # Compile TypeScript
+npm run test       # Run tests
+cdk deploy         # Deploy stack
+cdk diff           # Show changes
+cdk synth          # Generate CloudFormation
+```
+
+## Documentation
+
+- [Lambda Function](./lambda/macro-data-ingestion/README.md) - Macro data ingestion details
+- [Scripts](./scripts/README.md) - Available utility scripts
+- [API Setup Guide](../doc/API_KEY_SETUP_GUIDE.md) - Detailed API key configuration
+
+## Environment Variables
+
+The stack uses `.env.{environment}` files for configuration:
+- `.env.dev` - Development environment
+- `.env.prod` - Production environment
+
+These files are gitignored and contain sensitive API keys.

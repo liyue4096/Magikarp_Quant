@@ -21,18 +21,22 @@ import { MacroIndicators, MacroDataConfig } from '../types';
 
 // Mock axios
 jest.mock('axios');
-const mockedAxios = axios as jest.Mocked<typeof axios>;
 
-// Mock axios.isAxiosError
-jest.spyOn(axios, 'isAxiosError');
+// Create typed mocks
+const mockAxiosGet = jest.fn();
+const mockAxiosIsAxiosError = jest.fn();
+
+// Assign mocks to axios
+(axios.get as any) = mockAxiosGet;
+(axios.isAxiosError as any) = mockAxiosIsAxiosError;
 
 describe('FredApiClient', () => {
     let client: FredApiClient;
     const mockApiKey = 'test-api-key';
 
     beforeEach(() => {
-        client = new FredApiClient(mockApiKey, 3, 2.0);
         jest.clearAllMocks();
+        client = new FredApiClient(mockApiKey, 3, 2.0);
     });
 
     describe('fetchSeries', () => {
@@ -46,12 +50,12 @@ describe('FredApiClient', () => {
                 }
             };
 
-            mockedAxios.get.mockResolvedValueOnce(mockResponse);
+            mockAxiosGet.mockResolvedValueOnce(mockResponse);
 
             const result = await client.fetchSeries('DFF', '2024-01-15');
 
             expect(result).toBe(5.33);
-            expect(mockedAxios.get).toHaveBeenCalledWith(
+            expect(mockAxiosGet).toHaveBeenCalledWith(
                 'https://api.stlouisfed.org/fred/series/observations',
                 expect.objectContaining({
                     params: expect.objectContaining({
@@ -71,7 +75,7 @@ describe('FredApiClient', () => {
                 }
             };
 
-            mockedAxios.get.mockResolvedValueOnce(mockResponse);
+            mockAxiosGet.mockResolvedValueOnce(mockResponse);
 
             const result = await client.fetchSeries('DFF', '2024-01-15');
 
@@ -87,7 +91,7 @@ describe('FredApiClient', () => {
                 }
             };
 
-            mockedAxios.get.mockResolvedValueOnce(mockResponse);
+            mockAxiosGet.mockResolvedValueOnce(mockResponse);
 
             const result = await client.fetchSeries('DGS2', '2024-01-15');
 
@@ -108,17 +112,17 @@ describe('FredApiClient', () => {
                 }
             };
 
-            // Mock axios.isAxiosError to return true for network errors
-            (axios.isAxiosError as jest.MockedFunction<typeof axios.isAxiosError>).mockReturnValue(true);
+            // Mock mockAxiosIsAxiosError to return true for network errors
+            (mockAxiosIsAxiosError as jest.MockedFunction<typeof mockAxiosIsAxiosError>).mockReturnValue(true);
 
-            mockedAxios.get
+            mockAxiosGet
                 .mockRejectedValueOnce(networkError)
                 .mockResolvedValueOnce(mockResponse);
 
             const result = await client.fetchSeries('DFF', '2024-01-15');
 
             expect(result).toBe(4.5);
-            expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+            expect(mockAxiosGet).toHaveBeenCalledTimes(2);
         });
 
 
@@ -128,15 +132,15 @@ describe('FredApiClient', () => {
             networkError.code = 'ETIMEDOUT';
             networkError.isAxiosError = true;
 
-            // Mock axios.isAxiosError to return true for network errors
-            (axios.isAxiosError as jest.MockedFunction<typeof axios.isAxiosError>).mockReturnValue(true);
+            // Mock mockAxiosIsAxiosError to return true for network errors
+            (mockAxiosIsAxiosError as jest.MockedFunction<typeof mockAxiosIsAxiosError>).mockReturnValue(true);
 
-            mockedAxios.get.mockRejectedValue(networkError);
+            mockAxiosGet.mockRejectedValue(networkError);
 
             const result = await client.fetchSeries('DFF', '2024-01-15');
 
             expect(result).toBeNull();
-            expect(mockedAxios.get).toHaveBeenCalledTimes(3); // maxRetries = 3
+            expect(mockAxiosGet).toHaveBeenCalledTimes(3); // maxRetries = 3
         });
 
         it('should handle rate limit error (429) with retry', async () => {
@@ -156,17 +160,17 @@ describe('FredApiClient', () => {
                 }
             };
 
-            // Mock axios.isAxiosError to return true for our error
-            (axios.isAxiosError as jest.MockedFunction<typeof axios.isAxiosError>).mockReturnValue(true);
+            // Mock mockAxiosIsAxiosError to return true for our error
+            (mockAxiosIsAxiosError as jest.MockedFunction<typeof mockAxiosIsAxiosError>).mockReturnValue(true);
 
-            mockedAxios.get
+            mockAxiosGet
                 .mockRejectedValueOnce(rateLimitError)
                 .mockResolvedValueOnce(mockResponse);
 
             const result = await client.fetchSeries('DFF', '2024-01-15');
 
             expect(result).toBe(3.5);
-            expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+            expect(mockAxiosGet).toHaveBeenCalledTimes(2);
         });
     });
 
@@ -180,12 +184,12 @@ describe('FredApiClient', () => {
                 }
             };
 
-            mockedAxios.get.mockResolvedValueOnce(mockResponse);
+            mockAxiosGet.mockResolvedValueOnce(mockResponse);
 
             const result = await client.fetchGdpGrowth('2024-01-01');
 
             expect(result).toBe(2.5);
-            expect(mockedAxios.get).toHaveBeenCalledWith(
+            expect(mockAxiosGet).toHaveBeenCalledWith(
                 expect.any(String),
                 expect.objectContaining({
                     params: expect.objectContaining({
@@ -205,7 +209,7 @@ describe('FredApiClient', () => {
                 }
             };
 
-            mockedAxios.get.mockResolvedValueOnce(mockResponse);
+            mockAxiosGet.mockResolvedValueOnce(mockResponse);
 
             const result = await client.fetchCpi('2024-01-01');
 
@@ -221,7 +225,7 @@ describe('FredApiClient', () => {
                 }
             };
 
-            mockedAxios.get.mockResolvedValueOnce(mockResponse);
+            mockAxiosGet.mockResolvedValueOnce(mockResponse);
 
             const result = await client.fetchFederalFundsRate('2024-01-15');
 
@@ -245,7 +249,7 @@ describe('FredApiClient', () => {
                 }
             };
 
-            mockedAxios.get
+            mockAxiosGet
                 .mockResolvedValueOnce(mock2YResponse)
                 .mockResolvedValueOnce(mock10YResponse);
 
@@ -263,8 +267,8 @@ describe('YahooFinanceClient', () => {
     let client: YahooFinanceClient;
 
     beforeEach(() => {
-        client = new YahooFinanceClient(3, 2.0, 0); // No delay for tests
         jest.clearAllMocks();
+        client = new YahooFinanceClient(3, 2.0, 0); // No delay for tests
     });
 
     describe('fetchClosingPrice', () => {
@@ -289,12 +293,12 @@ describe('YahooFinanceClient', () => {
                 }
             };
 
-            mockedAxios.get.mockResolvedValueOnce(mockResponse);
+            mockAxiosGet.mockResolvedValueOnce(mockResponse);
 
             const result = await client.fetchClosingPrice('^VIX', '2024-01-15');
 
             expect(result).toBe(14.8);
-            expect(mockedAxios.get).toHaveBeenCalledWith(
+            expect(mockAxiosGet).toHaveBeenCalledWith(
                 expect.stringContaining('^VIX'),
                 expect.objectContaining({
                     params: expect.objectContaining({
@@ -314,7 +318,7 @@ describe('YahooFinanceClient', () => {
                 }
             };
 
-            mockedAxios.get.mockResolvedValueOnce(mockResponse);
+            mockAxiosGet.mockResolvedValueOnce(mockResponse);
 
             const result = await client.fetchClosingPrice('^VIX', '2024-01-15');
 
@@ -342,7 +346,7 @@ describe('YahooFinanceClient', () => {
                 }
             };
 
-            mockedAxios.get.mockResolvedValueOnce(mockResponse);
+            mockAxiosGet.mockResolvedValueOnce(mockResponse);
 
             const result = await client.fetchClosingPrice('^VIX', '2024-01-15');
 
@@ -374,14 +378,14 @@ describe('YahooFinanceClient', () => {
                 }
             };
 
-            mockedAxios.get
+            mockAxiosGet
                 .mockRejectedValueOnce(networkError)
                 .mockResolvedValueOnce(mockResponse);
 
             const result = await client.fetchClosingPrice('^VIX', '2024-01-15');
 
             expect(result).toBe(14.8);
-            expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+            expect(mockAxiosGet).toHaveBeenCalledTimes(2);
         });
     });
 
@@ -407,7 +411,7 @@ describe('YahooFinanceClient', () => {
                 }
             };
 
-            mockedAxios.get.mockResolvedValueOnce(mockResponse);
+            mockAxiosGet.mockResolvedValueOnce(mockResponse);
 
             const result = await client.fetchVix('2024-01-15');
 
@@ -435,7 +439,7 @@ describe('YahooFinanceClient', () => {
                 }
             };
 
-            mockedAxios.get.mockResolvedValueOnce(mockResponse);
+            mockAxiosGet.mockResolvedValueOnce(mockResponse);
 
             const result = await client.fetchDxy('2024-01-15');
 
@@ -456,8 +460,8 @@ describe('MacroDataIngestionService', () => {
     };
 
     beforeEach(() => {
-        service = new MacroDataIngestionService(mockConfig);
         jest.clearAllMocks();
+        service = new MacroDataIngestionService(mockConfig);
     });
 
     describe('calculateCpiYoy', () => {
@@ -474,7 +478,7 @@ describe('MacroDataIngestionService', () => {
                 }
             };
 
-            mockedAxios.get.mockResolvedValueOnce(mockPreviousYearResponse);
+            mockAxiosGet.mockResolvedValueOnce(mockPreviousYearResponse);
 
             // Access private method via type assertion
             const calculateCpiYoy = (service as any).calculateCpiYoy.bind(service);
@@ -491,7 +495,7 @@ describe('MacroDataIngestionService', () => {
                 }
             };
 
-            mockedAxios.get.mockResolvedValueOnce(mockResponse);
+            mockAxiosGet.mockResolvedValueOnce(mockResponse);
 
             const calculateCpiYoy = (service as any).calculateCpiYoy.bind(service);
             const result = await calculateCpiYoy(308.417, '2024-01-15');
@@ -508,7 +512,7 @@ describe('MacroDataIngestionService', () => {
                 }
             };
 
-            mockedAxios.get.mockResolvedValueOnce(mockResponse);
+            mockAxiosGet.mockResolvedValueOnce(mockResponse);
 
             const calculateCpiYoy = (service as any).calculateCpiYoy.bind(service);
             const result = await calculateCpiYoy(308.417, '2024-01-15');

@@ -101,6 +101,11 @@ For local testing or backward compatibility, you can also provide the FRED API k
 }
 ```
 
+## Documentation
+
+- [API Key Setup Guide](../../../doc/API_KEY_SETUP_GUIDE.md) - Complete API key configuration
+- [Scripts](../../scripts/README.md) - Utility scripts for backfilling and setup
+
 ## Development Status
 
-This is the initial project structure. Implementation tasks are tracked in `.kiro/specs/macro-data-ingestion/tasks.md`.
+Implementation tasks are tracked in `.kiro/specs/macro-data-ingestion/tasks.md`.

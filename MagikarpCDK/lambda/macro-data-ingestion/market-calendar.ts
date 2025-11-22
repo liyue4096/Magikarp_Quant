@@ -183,3 +183,33 @@ export function getMostRecentTradingDay(): string {
 
     return getPreviousTradingDay(today);
 }
+
+/**
+ * Calculate the previous business day from a given date
+ * Skips weekends and US market holidays
+ * 
+ * @param date Date in YYYY-MM-DD format
+ * @returns Previous business day in YYYY-MM-DD format
+ */
+export function getPreviousBusinessDay(date: string): string {
+    return getPreviousTradingDay(date);
+}
+
+/**
+ * Get N previous business days from a given date
+ * 
+ * @param date Starting date in YYYY-MM-DD format
+ * @param count Number of previous business days to retrieve
+ * @returns Array of dates in YYYY-MM-DD format, ordered from most recent to oldest
+ */
+export function getPreviousBusinessDays(date: string, count: number): string[] {
+    const businessDays: string[] = [];
+    let currentDate = date;
+
+    for (let i = 0; i < count; i++) {
+        currentDate = getPreviousBusinessDay(currentDate);
+        businessDays.push(currentDate);
+    }
+
+    return businessDays;
+}

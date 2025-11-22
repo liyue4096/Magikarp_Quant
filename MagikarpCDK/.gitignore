@@ -3,6 +3,18 @@
 *.d.ts
 node_modules
 
+# Build output directories
+build/
+dist/
+
 # CDK asset staging directory
 .cdk.staging
 cdk.out
+
+# Environment files with API keys (NEVER commit these!)
+.env
+.env.*
+!.env.*.template
+
+# Backfill response files
+backfill_responses/

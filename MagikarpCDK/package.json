@@ -2,13 +2,14 @@
   "name": "magikarp_cdk",
   "version": "0.1.0",
   "bin": {
-    "magikarp_cdk": "bin/magikarp_cdk.js"
+    "magikarp_cdk": "build/bin/magikarp_cdk.js"
   },
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
     "test": "jest",
-    "cdk": "cdk"
+    "cdk": "cdk",
+    "clean": "rm -rf build dist lambda/*/dist"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",

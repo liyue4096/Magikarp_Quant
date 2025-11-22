@@ -9,7 +9,7 @@ export interface MacroIndicators {
     cpi_yoy?: number;  // % change
     interest_rate: number;  // %
     vix: number;  // Index value
-    dxy: number;  // Index value
+    dxy?: number;  // Index value
     treasury_2y: number;  // %
     treasury_10y: number;  // %
     yield_curve_spread: number;  // % points
@@ -59,7 +59,7 @@ export const VALIDATION_RULES: Record<string, ValidationRule> = {
     cpi_yoy: { min: -20, max: 50, required: true },
     interest_rate: { min: 0, max: 20, required: true },
     vix: { min: 0, max: 100, required: true },
-    dxy: { min: 50, max: 200, required: true },
+    dxy: { min: 50, max: 200, required: false },
     treasury_2y: { min: 0, max: 20, required: true },
     treasury_10y: { min: 0, max: 20, required: true },
     yield_curve_spread: { min: -10, max: 10, required: true },

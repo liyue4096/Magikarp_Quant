@@ -7,7 +7,7 @@ import { marshall } from '@aws-sdk/util-dynamodb';
 import { FredApiClient } from './clients/fred-client';
 import { YahooFinanceClient } from './clients/yahoo-client';
 import { MacroDataConfig, FetchResult, BackfillResult, MacroIndicators } from './types';
-import { getTradingDaysBetween, isMarketOpen } from './market-calendar';
+import { getTradingDaysBetween, isMarketOpen, getPreviousBusinessDay } from './market-calendar';
 
 /**
  * Load configuration from environment variables
@@ -342,6 +342,10 @@ export class MacroDataIngestionService {
         const errors: string[] = [];
 
         try {
+            // Calculate previous business day for FRED data
+            const previousBusinessDay = getPreviousBusinessDay(date);
+            console.log(`Using previous business day ${previousBusinessDay} for FRED data`);
+
             // Step 1: Fetch data from all sources in parallel (Requirements 1.1-1.8, 6.4)
             console.log('Fetching data from all sources in parallel...');
 
@@ -360,14 +364,14 @@ export class MacroDataIngestionService {
                 treasury10y,
                 iceBofaBbb
             ] = await Promise.all([
-                this.fredClient.fetchGdpGrowth(date),           // Requirement 1.1
-                this.fredClient.fetchCpi(date),                 // Requirement 1.2
-                this.fredClient.fetchFederalFundsRate(date),    // Requirement 1.3
-                this.yahooClient.fetchVix(date),                // Requirement 1.4
-                this.yahooClient.fetchDxy(date),                // Requirement 1.5
-                this.fredClient.fetchTreasury2Year(date),       // Requirement 1.6
-                this.fredClient.fetchTreasury10Year(date),      // Requirement 1.7
-                this.fredClient.fetchIceBofaBbb(date)           // Requirement 1.8
+                this.fredClient.fetchGdpGrowth(previousBusinessDay),           // Requirement 1.1 - monthly/quarterly, use previous business day
+                this.fredClient.fetchCpi(previousBusinessDay),                 // Requirement 1.2 - monthly, use previous business day
+                this.fredClient.fetchSeriesWithFallback('DFF', previousBusinessDay),    // Requirement 1.3 - daily, use fallback
+                this.yahooClient.fetchVix(date),                // Requirement 1.4 - real-time, use current date
+                this.yahooClient.fetchDxy(date),                // Requirement 1.5 - real-time, use current date
+                this.fredClient.fetchSeriesWithFallback('DGS2', previousBusinessDay),       // Requirement 1.6 - daily, use fallback
+                this.fredClient.fetchSeriesWithFallback('DGS10', previousBusinessDay),      // Requirement 1.7 - daily, use fallback
+                this.fredClient.fetchSeriesWithFallback('BAMLC0A4CBBBEY', previousBusinessDay)           // Requirement 1.8 - daily, use fallback
             ]);
 
             // Step 2: Perform cross-validation on VIX data (basic validation)
@@ -383,7 +387,7 @@ export class MacroDataIngestionService {
             // Calculate CPI year-over-year change (Requirement 2.2)
             let cpiYoy: number | null = null;
             if (cpi !== null && this.fredClient) {
-                cpiYoy = await this.calculateCpiYoy(cpi, date);
+                cpiYoy = await this.calculateCpiYoy(cpi, previousBusinessDay);
                 if (cpiYoy === null) {
                     console.warn(`Could not calculate CPI YoY for ${date}`);
                 }
@@ -402,9 +406,7 @@ export class MacroDataIngestionService {
             if (vix === null) {
                 errors.push('VIX data is required but not available');
             }
-            if (dxy === null) {
-                errors.push('DXY data is required but not available');
-            }
+            // DXY is now optional - Yahoo Finance data may not be available for all dates
             if (treasury2y === null) {
                 errors.push('2-year Treasury data is required but not available');
             }
@@ -441,7 +443,7 @@ export class MacroDataIngestionService {
                 cpi_yoy: round(cpiYoy),  // Optional field
                 interest_rate: round(interestRate)!,  // Required, checked above
                 vix: round(vix)!,  // Required, checked above
-                dxy: round(dxy)!,  // Required, checked above
+                dxy: round(dxy),  // Optional - Yahoo Finance data may not be available
                 treasury_2y: round(treasury2y)!,  // Required, checked above
                 treasury_10y: round(treasury10y)!,  // Required, checked above
                 yield_curve_spread: round(yieldCurveSpread)!,  // Required, checked above
@@ -569,10 +571,11 @@ export class MacroDataIngestionService {
                 // Add delay after each batch to respect API rate limits
                 if ((i + 1) % batchSize === 0 && i < tradingDays.length - 1) {
                     // FRED API limit: 120 requests/minute
-                    // With 8 FRED requests per date, we can do ~15 dates/minute
-                    // Add 4 second delay after each batch of 10 to be safe
-                    const delayMs = 4000;
-                    console.log(`Batch complete. Waiting ${delayMs}ms to respect API rate limits...`);
+                    // With 8 FRED requests per date, we can do ~15 dates/minute max
+                    // Batch of 10 days = 80 API calls, needs ~40 seconds to stay under limit
+                    // Add 45 second delay after each batch of 10 to be safe
+                    const delayMs = 45000;
+                    console.log(`Batch of ${batchSize} days complete. Waiting ${delayMs}ms to respect FRED rate limits...`);
                     await new Promise(resolve => setTimeout(resolve, delayMs));
                 }
 
