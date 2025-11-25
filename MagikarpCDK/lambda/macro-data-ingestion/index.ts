@@ -9,7 +9,7 @@
  */
 
 import { MacroDataIngestionService } from './service';
-import { getMostRecentTradingDay } from './market-calendar';
+import { getMostRecentTradingDay, isMarketOpen } from './market-calendar';
 import { FetchResult, BackfillResult } from './types';
 
 // Default start date for backfill: January 3, 2000 (first trading day of Y2K)
@@ -75,6 +75,18 @@ export async function handler(event: any): Promise<FetchResult | BackfillResult>
             return result;
 
         } else {
+            // early exit for non-trading day
+            const today = new Date().toISOString().split('T')[0];
+            if (!isMarketOpen(today)) {
+                console.log(`Market close for ${today}`);
+
+                return {
+                    success: false,
+                    date: today,
+                    errors: [`${today} is not a trading day`]
+                };
+            }
+
             // Daily fetch operation: use event.date or current date (Requirement 7.1)
             const date = event.date || getMostRecentTradingDay();
 

@@ -225,13 +225,13 @@ export class MacroIngestionConstruct extends Construct {
             // Description
             description: 'Triggers macro data ingestion Lambda daily at 11 PM UTC (6 PM EST)',
 
-            // Cron schedule: 11 PM UTC every day
+            // Cron schedule: 11 PM UTC every weekday
             // Format: minute hour day-of-month month day-of-week year
             schedule: events.Schedule.cron({
                 minute: '0',
                 hour: '23',  // 11 PM UTC = 6 PM EST (after market close)
-                day: '*',    // Every day
                 month: '*',  // Every month
+                weekDay: '1-5',
                 year: '*',   // Every year
             }),
 
