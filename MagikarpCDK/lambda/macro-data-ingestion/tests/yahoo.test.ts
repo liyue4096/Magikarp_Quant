@@ -4,7 +4,7 @@
  * Usage: npx ts-node tests/test-yahoo.ts
  */
 
-import { YahooFinanceClient } from '../clients/yahoo-client';
+import { YahooFinanceClient } from '../src/clients/yahoo-client';
 
 async function testYahooClient() {
     console.log('Testing Yahoo Finance Client...\n');

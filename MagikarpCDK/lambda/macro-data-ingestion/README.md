@@ -6,17 +6,24 @@ This Lambda function fetches daily macroeconomic indicators from FRED API, Yahoo
 
 ```
 macro-data-ingestion/
-├── index.ts                    # Lambda handler entry point
-├── service.ts                  # Main service orchestration class
-├── types.ts                    # TypeScript interfaces and types
-├── validation.ts               # Data validation logic
-├── clients/
-│   ├── fred-client.ts         # FRED API client
-│   ├── yahoo-client.ts        # Yahoo Finance client
-│   └── alpha-vantage-client.ts # Alpha Vantage client
-├── package.json               # Dependencies
-├── tsconfig.json              # TypeScript configuration
-└── README.md                  # This file
+├── src/
+│   ├── index.ts               # Lambda handler entry point
+│   ├── service.ts             # Main service orchestration class
+│   ├── clients/
+│   │   ├── index.ts           # Barrel export
+│   │   ├── fred-client.ts     # FRED API client
+│   │   ├── yahoo-client.ts    # Yahoo Finance client
+│   │   └── alpha-vantage-client.ts
+│   ├── types/
+│   │   └── index.ts           # TypeScript interfaces
+│   └── utils/
+│       ├── market-calendar.ts # Trading day utilities
+│       ├── secrets.ts         # AWS Secrets/SSM helpers
+│       └── validation.ts      # Data validation logic
+├── tests/                     # Test files (*.test.ts)
+├── package.json
+├── tsconfig.json
+└── README.md
 ```
 
 ## Setup

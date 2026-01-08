@@ -9,7 +9,7 @@
  */
 
 import { MacroDataIngestionService } from './service';
-import { getMostRecentTradingDay, isMarketOpen } from './market-calendar';
+import { getMostRecentTradingDay, isMarketOpen } from './utils/market-calendar';
 import { FetchResult, BackfillResult } from './types';
 
 // Default start date for backfill: January 3, 2000 (first trading day of Y2K)

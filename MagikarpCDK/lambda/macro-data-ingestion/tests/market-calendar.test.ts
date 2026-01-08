@@ -20,7 +20,7 @@ import {
     getMostRecentTradingDay,
     getPreviousBusinessDay,
     getPreviousBusinessDays
-} from '../market-calendar';
+} from '../src/utils/market-calendar';
 
 function testMarketCalendar() {
     console.log('=== Testing Market Calendar Utility ===\n');

@@ -6,7 +6,7 @@
  * export FRED_API_KEY=your_api_key_here
  */
 
-import { FredApiClient } from '../clients/fred-client';
+import { FredApiClient } from '../src/clients/fred-client';
 
 async function testFredClient() {
     const apiKey = process.env.FRED_API_KEY;

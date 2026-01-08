@@ -10,8 +10,8 @@
  * - 10.1-10.3: Fallback logic for FRED indicators
  */
 
-import { FredApiClient } from '../clients/fred-client';
-import { getPreviousBusinessDay, getPreviousBusinessDays } from '../market-calendar';
+import { FredApiClient } from '../src/clients/fred-client';
+import { getPreviousBusinessDay, getPreviousBusinessDays } from '../src/utils/market-calendar';
 
 async function testFallbackIntegration() {
     console.log('=== Testing Fallback Integration ===\n');

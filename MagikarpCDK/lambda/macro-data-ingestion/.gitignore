@@ -1,7 +1,19 @@
+# Dependencies
 node_modules/
+
+# Build output
+build/
 dist/
+
+# Compiled TypeScript files (ignore everywhere except intentional JS files)
 *.js
+!jest.config.js
+!tests/test-quick.js
 *.d.ts
 *.js.map
+
+# OS files
 .DS_Store
+
+# Test coverage
 coverage/

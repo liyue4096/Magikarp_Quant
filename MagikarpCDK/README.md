@@ -64,6 +64,7 @@ cdk synth          # Generate CloudFormation
 ## Documentation
 
 - [Lambda Function](./lambda/macro-data-ingestion/README.md) - Macro data ingestion details
+- [Russell Index Tracking](./scripts/RUSSELL_INDEX_INGESTION.md) - Russell 1000 index data ingestion
 - [Scripts](./scripts/README.md) - Available utility scripts
 - [API Setup Guide](../doc/API_KEY_SETUP_GUIDE.md) - Detailed API key configuration
 

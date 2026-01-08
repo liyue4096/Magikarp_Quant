@@ -96,7 +96,7 @@ export class MacroIngestionConstruct extends Construct {
             functionName: `${environment}-magikarp-macro-ingestion`,
 
             // Entry point for the Lambda function
-            entry: path.join(__dirname, '../../lambda/macro-data-ingestion/index.ts'),
+            entry: path.join(__dirname, '../../lambda/macro-data-ingestion/src/index.ts'),
 
             // Handler function name (exported from index.ts)
             handler: 'handler',
@@ -136,6 +136,11 @@ export class MacroIngestionConstruct extends Construct {
                     '@aws-sdk/client-secrets-manager',
                     '@aws-sdk/client-ssm',
                     '@aws-sdk/util-dynamodb',
+                    // Exclude Deno testing dependencies from yahoo-finance2 package
+                    '@std/testing/mock',
+                    '@std/testing/bdd',
+                    '@gadicc/fetch-mock-cache/runtimes/deno.ts',
+                    '@gadicc/fetch-mock-cache/stores/fs.ts',
                 ],
 
                 // Minify code for smaller bundle size
@@ -246,7 +251,7 @@ export class MacroIngestionConstruct extends Construct {
             event: events.RuleTargetInput.fromObject({}),
 
             // Retry configuration for failed invocations
-            retryAttempts: 2,
+            retryAttempts: 3,
 
             // Maximum event age (24 hours)
             maxEventAge: cdk.Duration.hours(24),

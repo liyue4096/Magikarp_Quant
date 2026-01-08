@@ -14,7 +14,7 @@
  * Usage: ts-node tests/test-alpha-vantage.ts
  */
 
-import { AlphaVantageClient } from '../clients/alpha-vantage-client';
+import { AlphaVantageClient } from '../src/clients/alpha-vantage-client';
 
 async function testAlphaVantageClient() {
     console.log('=== Testing Alpha Vantage Client ===\n');

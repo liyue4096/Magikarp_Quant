@@ -2,9 +2,11 @@
     "name": "macro-data-ingestion",
     "version": "1.0.0",
     "description": "Lambda function for ingesting macroeconomic data from FRED, Yahoo Finance, and Alpha Vantage",
-    "main": "index.js",
+    "main": "build/index.js",
     "scripts": {
         "build": "tsc",
+        "clean": "rm -rf build dist",
+        "rebuild": "npm run clean && npm run build",
         "test": "jest --no-watch",
         "test:watch": "jest --watch",
         "test:coverage": "jest --coverage --no-watch"
@@ -15,11 +17,14 @@
         "@aws-sdk/client-ssm": "^3.933.0",
         "@aws-sdk/util-dynamodb": "^3.0.0",
         "axios": "^1.6.0",
+        "axios-cookiejar-support": "^5.0.5",
+        "tough-cookie": "^4.1.4",
         "yahoo-finance2": "^2.11.0"
     },
     "devDependencies": {
         "@types/jest": "^29.0.0",
         "@types/node": "^20.0.0",
+        "@types/tough-cookie": "^4.0.5",
         "jest": "^29.0.0",
         "ts-jest": "^29.0.0",
         "ts-node": "^10.9.2",

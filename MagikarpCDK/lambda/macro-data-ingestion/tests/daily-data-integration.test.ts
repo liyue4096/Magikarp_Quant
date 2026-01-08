@@ -16,8 +16,8 @@
  * - Logging of fallback usage
  */
 
-import { MacroDataIngestionService } from '../service';
-import { MacroDataConfig } from '../types';
+import { MacroDataIngestionService } from '../src/service';
+import { MacroDataConfig } from '../src/types';
 
 async function testDailyDataIntegration() {
     console.log('=== Testing fetchDailyData Integration ===\n');

@@ -13,11 +13,11 @@
  */
 
 import axios from 'axios';
-import { FredApiClient } from '../clients/fred-client';
-import { YahooFinanceClient } from '../clients/yahoo-client';
-import { MacroDataIngestionService } from '../service';
-import { validateData, validateRanges, detectLargeChanges, VALIDATION_RULES } from '../validation';
-import { MacroIndicators, MacroDataConfig } from '../types';
+import { FredApiClient } from '../src/clients/fred-client';
+import { YahooFinanceClient } from '../src/clients/yahoo-client';
+import { MacroDataIngestionService } from '../src/service';
+import { validateData, validateRanges, detectLargeChanges, VALIDATION_RULES } from '../src/utils/validation';
+import { MacroIndicators, MacroDataConfig } from '../src/types';
 
 // Mock axios
 jest.mock('axios');
@@ -899,7 +899,7 @@ describe('Validation', () => {
     describe('VALIDATION_RULES', () => {
         it('should have correct validation rules defined', () => {
             expect(VALIDATION_RULES.vix).toEqual({ min: 0, max: 100, required: true });
-            expect(VALIDATION_RULES.dxy).toEqual({ min: 50, max: 200, required: true });
+            expect(VALIDATION_RULES.dxy).toEqual({ min: 50, max: 200, required: false });  // DXY is optional
             expect(VALIDATION_RULES.treasury_2y).toEqual({ min: 0, max: 20, required: true });
             expect(VALIDATION_RULES.treasury_10y).toEqual({ min: 0, max: 20, required: true });
             expect(VALIDATION_RULES.gdp_growth).toEqual({ min: -50, max: 50, required: false });

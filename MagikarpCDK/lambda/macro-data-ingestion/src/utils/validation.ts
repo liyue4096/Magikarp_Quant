@@ -2,7 +2,7 @@
  * Data validation module for macro indicators
  */
 
-import { MacroIndicators, ValidationRule, ValidationResult } from './types';
+import { MacroIndicators, ValidationRule, ValidationResult } from '../types';
 
 export const VALIDATION_RULES: Record<string, ValidationRule> = {
     gdp_growth: { min: -50, max: 50, required: false },  // Quarterly data

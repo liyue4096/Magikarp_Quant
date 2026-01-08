@@ -7,7 +7,7 @@ import { marshall } from '@aws-sdk/util-dynamodb';
 import { FredApiClient } from './clients/fred-client';
 import { YahooFinanceClient } from './clients/yahoo-client';
 import { MacroDataConfig, FetchResult, BackfillResult, MacroIndicators } from './types';
-import { getTradingDaysBetween, isMarketOpen, getPreviousBusinessDay } from './market-calendar';
+import { getTradingDaysBetween, isMarketOpen, getPreviousBusinessDay } from './utils/market-calendar';
 
 /**
  * Load configuration from environment variables
@@ -109,7 +109,7 @@ export class MacroDataIngestionService {
 
         try {
             // Fetch FRED API key from SSM Parameter Store (Requirement 9.1, 9.2)
-            const { getFredApiKey } = await import('./secrets.js');
+            const { getFredApiKey } = await import('./utils/secrets.js');
             const fredApiKey = await getFredApiKey();
 
             // Initialize FRED client with API key from Parameter Store
@@ -453,7 +453,7 @@ export class MacroDataIngestionService {
 
             // Step 4: Validate all data using validation module (Requirement 3.1)
             console.log('Validating data...');
-            const { validateData } = await import('./validation.js');
+            const { validateData } = await import('./utils/validation.js');
             const validationResult = validateData(macroData);
 
             // Log validation errors/warnings

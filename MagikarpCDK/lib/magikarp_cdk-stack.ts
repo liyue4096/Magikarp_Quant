@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { DatabaseConstruct } from './constructs/database-construct';
 import { MacroIngestionConstruct } from './constructs/macro-ingestion-construct';
+import { RussellIndexTableConstruct } from './constructs/russell-index-table-construct';
 
 export class MagikarpCdkStack extends cdk.Stack {
   /**
@@ -15,6 +16,12 @@ export class MagikarpCdkStack extends cdk.Stack {
    * Exposed for future reference and manual invocation
    */
   public readonly macroIngestion: MacroIngestionConstruct;
+
+  /**
+   * Russell index table construct for storing index component data
+   * Exposed for future reference by ingestion scripts
+   */
+  public readonly russellIndexTable: RussellIndexTableConstruct;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -31,6 +38,12 @@ export class MagikarpCdkStack extends cdk.Stack {
     // Requirements: 7.1, 7.2, 9.2
     this.macroIngestion = new MacroIngestionConstruct(this, 'MacroIngestion', {
       macroIndicatorsTable: this.database.macroIndicatorsTable,
+      environment: environment
+    });
+
+    // Instantiate RussellIndexTableConstruct for index tracking
+    // Requirements: 1.1, 1.2
+    this.russellIndexTable = new RussellIndexTableConstruct(this, 'RussellIndexTable', {
       environment: environment
     });
   }

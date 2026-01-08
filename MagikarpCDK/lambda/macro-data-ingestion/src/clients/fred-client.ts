@@ -152,7 +152,7 @@ export class FredApiClient {
         targetDate: string,
         maxAttempts: number = 5
     ): Promise<number | null> {
-        const { getPreviousBusinessDays } = await import('../market-calendar.js');
+        const { getPreviousBusinessDays } = await import('../utils/market-calendar.js');
 
         // Try target date first, then previous business days
         const datesToTry = [targetDate, ...getPreviousBusinessDays(targetDate, maxAttempts - 1)];

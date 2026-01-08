@@ -4,7 +4,44 @@ This directory contains utility scripts for managing the Magikarp CDK deployment
 
 ## Available Scripts
 
-### backfill-missing-data.sh (NEW!)
+### ingest-russell-index.ts
+
+Ingests Russell 1000 index component data from CSV files into DynamoDB with timestamp tracking.
+
+**Usage:**
+```bash
+ts-node ingest-russell-index.ts <csv-file-path> <timestamp> [table-name]
+```
+
+**Examples:**
+```bash
+# Ingest Russell 1000 data with default table name
+ts-node ingest-russell-index.ts ../data/russell-1000-index-11-25-2025.csv 2025-11-25
+
+# Specify custom table name
+ts-node ingest-russell-index.ts ../data/russell-1000-index-11-25-2025.csv 2025-11-25 prod-tmagikarp-russell-index
+
+# Use environment variable for table name
+export RUSSELL_INDEX_TABLE_NAME=dev-tmagikarp-russell-index
+ts-node ingest-russell-index.ts ../data/russell-1000-index-11-25-2025.csv 2025-11-25
+```
+
+**Features:**
+- Parses CSV files with Symbol and Name columns
+- Batch writes to DynamoDB (25 items per batch)
+- Progress logging and error handling
+- Timestamp-based tracking for historical analysis
+
+**Requirements:**
+- DynamoDB table deployed via CDK
+- AWS credentials with DynamoDB write permissions
+- CSV file with Symbol and Name columns
+
+See [RUSSELL_INDEX_INGESTION.md](./RUSSELL_INDEX_INGESTION.md) for complete documentation.
+
+---
+
+### backfill-missing-data.sh
 
 Scans DynamoDB for missing or incomplete macro data and backfills it with API key rotation.
 

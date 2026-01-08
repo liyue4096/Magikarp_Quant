@@ -25,6 +25,19 @@ interface AlphaVantageTimeSeriesDaily {
     };
 }
 
+interface AlphaVantageTimeSeriesDailyAdjusted {
+    [date: string]: {
+        '1. open': string;
+        '2. high': string;
+        '3. low': string;
+        '4. close': string;
+        '5. adjusted close': string;
+        '6. volume': string;
+        '7. dividend amount': string;
+        '8. split coefficient': string;
+    };
+}
+
 interface AlphaVantageResponse {
     'Meta Data'?: {
         '1. Information': string;
@@ -34,6 +47,7 @@ interface AlphaVantageResponse {
         '5. Time Zone': string;
     };
     'Time Series (Daily)'?: AlphaVantageTimeSeriesDaily;
+    'Time Series (Daily Adjusted)'?: AlphaVantageTimeSeriesDailyAdjusted;
     'Note'?: string;  // Rate limit message
     'Error Message'?: string;
 }
@@ -156,6 +170,99 @@ export class AlphaVantageClient {
             }
 
             return numericValue;
+        });
+    }
+
+    /**
+     * Fetch adjusted historical stock data (backward-adjusted)
+     * Returns all historical data with splits and dividends adjusted
+     *
+     * Alpha Vantage provides BACKWARD-ADJUSTED data by default:
+     * - Recent prices match actual trading prices
+     * - Historical prices are adjusted for splits/dividends
+     *
+     * @param symbol Stock symbol (e.g., 'AAPL', 'MSFT')
+     * @param outputSize 'compact' (100 days) or 'full' (20+ years)
+     * @returns Array of adjusted daily data sorted by date (newest first)
+     *
+     * @example
+     * const data = await client.fetchAdjustedHistoricalData('AAPL', 'full');
+     * for (const day of data) {
+     *   console.log(`${day.date}: Close=$${day.close}, AdjClose=$${day.adjustedClose}`);
+     * }
+     */
+    async fetchAdjustedHistoricalData(
+        symbol: string,
+        outputSize: 'compact' | 'full' = 'full'
+    ): Promise<Array<{
+        date: string;
+        open: number;
+        high: number;
+        low: number;
+        close: number;
+        adjustedClose: number;
+        volume: number;
+        dividendAmount: number;
+        splitCoefficient: number;
+    }> | null> {
+        if (!this.isAvailable) {
+            console.warn('Alpha Vantage API is currently unavailable. Skipping request.');
+            return null;
+        }
+
+        return this.fetchWithRetry(async () => {
+            await this.enforceRateLimit();
+
+            const response = await axios.get<AlphaVantageResponse>(this.baseUrl, {
+                params: {
+                    function: 'TIME_SERIES_DAILY_ADJUSTED',
+                    symbol: symbol,
+                    apikey: this.apiKey,
+                    outputsize: outputSize
+                },
+                timeout: 30000 // 30 second timeout for full data
+            });
+
+            this.requestCount++;
+
+            // Check for rate limit message
+            if (response.data['Note']) {
+                console.warn('Alpha Vantage rate limit reached:', response.data['Note']);
+                this.isAvailable = false;
+                return null;
+            }
+
+            // Check for error message
+            if (response.data['Error Message']) {
+                console.error('Alpha Vantage API error:', response.data['Error Message']);
+                this.isAvailable = false;
+                return null;
+            }
+
+            // Check if adjusted time series data exists
+            const timeSeries = response.data['Time Series (Daily Adjusted)'];
+            if (!timeSeries) {
+                console.warn(`No adjusted time series data available from Alpha Vantage for ${symbol}`);
+                return null;
+            }
+
+            // Convert to array format
+            const result = Object.entries(timeSeries).map(([date, data]) => ({
+                date,
+                open: parseFloat(data['1. open']),
+                high: parseFloat(data['2. high']),
+                low: parseFloat(data['3. low']),
+                close: parseFloat(data['4. close']),
+                adjustedClose: parseFloat(data['5. adjusted close']),
+                volume: parseFloat(data['6. volume']),
+                dividendAmount: parseFloat(data['7. dividend amount']),
+                splitCoefficient: parseFloat(data['8. split coefficient'])
+            }));
+
+            // Sort by date (newest first)
+            result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+            return result;
         });
     }
 
